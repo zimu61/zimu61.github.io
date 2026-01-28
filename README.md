@@ -1,2 +1,2 @@
 # zimu61.github.io
-zimu的个人博客
+zimu的知识库
