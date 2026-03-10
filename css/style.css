@@ -1,0 +1,299 @@
+/* =========================================
+   1. 字体与变量定义
+   ========================================= */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;600&display=swap');
+
+:root {
+    --bg-color: #02040a; 
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.7);
+    --accent-cyan: #00f3ff;
+    --glass-bg: rgba(10, 10, 15, 0.5); 
+    --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+/* =========================================
+   2. 全局基础样式
+   ========================================= */
+* {
+    font-family: 'Inter', -apple-system, sans-serif !important;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: var(--bg-color) !important;
+    color: var(--text-primary) !important;
+    margin: 0;
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+a { color: var(--text-primary) !important; text-decoration: none !important; transition: 0.3s; }
+a:hover { color: var(--accent-cyan) !important; }
+
+/* =========================================
+   3. 核心背景：像素光流系统
+   ========================================= */
+.pixel-light-container {
+    position: fixed; top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    z-index: -1; overflow: hidden;
+    background-color: #010205; transform: translateZ(0);
+}
+.pixel-light-container::before {
+    content: ""; position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 120vw; height: 120vh;
+    background: radial-gradient(circle, rgba(0, 50, 150, 0.15) 0%, transparent 60%);
+    z-index: 0; animation: ambient-pulse 10s infinite ease-in-out;
+}
+.pixel-grid-mask {
+    position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10;
+    background-image: linear-gradient(to right, #02040a 1px, transparent 1px), linear-gradient(to bottom, #02040a 1px, transparent 1px);
+    background-size: 14px 14px; pointer-events: none;
+}
+.energy-wave {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 100vw; height: 100vw; border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+    z-index: 1; opacity: 0; pointer-events: none;
+    background: radial-gradient(circle at center, transparent 30%, rgba(0, 243, 255, 0.1) 40%, rgba(0, 243, 255, 0.8) 50%, rgba(0, 102, 255, 0.4) 55%, transparent 70%);
+    mix-blend-mode: screen; filter: blur(8px);
+    will-change: transform, opacity; backface-visibility: hidden; perspective: 1000px;
+}
+.wave-1 { animation: shockwave-expand 12s infinite cubic-bezier(0.1, 0.5, 0.1, 1); }
+.wave-2 { animation: shockwave-expand 12s infinite cubic-bezier(0.1, 0.5, 0.1, 1); animation-delay: 4s; }
+.wave-3 { animation: shockwave-expand 12s infinite cubic-bezier(0.1, 0.5, 0.1, 1); animation-delay: 8s; }
+
+@keyframes shockwave-expand {
+    0% { transform: translate(-50%, -50%) scale(0) rotate(0deg); opacity: 0; border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; }
+    5% { opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(3.5) rotate(90deg); opacity: 0; border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+}
+@keyframes ambient-pulse {
+    0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 0.8; transform: translate(-50%, -50%) scale(1.1); }
+}
+
+/* =========================================
+   4. 右侧轨道组件
+   ========================================= */
+.orbit-system {
+    position: absolute; right: 10%; top: 30%;
+    width: 200px; height: 200px; pointer-events: none;
+    z-index: 5; will-change: transform;
+}
+.orbit-ring {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 100%; height: 100%; border: 1px solid rgba(0, 243, 255, 0.2); border-radius: 50%;
+}
+.orbit-planet {
+    position: absolute; top: 0; left: 50%; width: 6px; height: 6px;
+    background: var(--accent-cyan); border-radius: 50%; box-shadow: 0 0 10px var(--accent-cyan);
+    offset-path: path("M 0,100 a 100,100 0 1,1 0,1 z"); animation: orbit-move 4s linear infinite;
+}
+@keyframes orbit-move { 0% { offset-distance: 0%; } 100% { offset-distance: 100%; } }
+
+/* =========================================
+   5. 主内容容器 (文章和列表的外壳)
+   ========================================= */
+#main {
+    background: var(--glass-bg) !important;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border) !important;
+    padding: 60px 40px !important; margin: 40px auto !important;
+    max-width: 1000px; transform: translateZ(0); will-change: backdrop-filter;
+}
+h1, .postTitle { font-family: 'Playfair Display', serif !important; font-weight: 400 !important; font-style: italic !important; }
+
+/* =========================================
+   6. 首页文章卡片效果 (解决卡片丢失问题)
+   ========================================= */
+.day {
+    background: rgba(10, 10, 15, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 25px 30px;
+    margin-bottom: 35px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    transition: all 0.3s ease;
+}
+.day:hover {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(0, 243, 255, 0.3);
+    box-shadow: 0 8px 30px rgba(0, 243, 255, 0.1);
+    transform: translateY(-2px);
+}
+.dayTitle {
+    font-size: 0.85rem; color: #00f3ff !important; letter-spacing: 2px;
+    margin-bottom: 15px; border-bottom: 1px dashed rgba(0, 243, 255, 0.2);
+    padding-bottom: 8px; display: inline-block;
+}
+.day .postTitle {
+    font-size: 1.4rem !important; margin-bottom: 15px;
+    font-weight: 600 !important; font-style: normal !important; 
+    font-family: 'Inter', -apple-system, sans-serif !important;
+}
+.day .postTitle a { color: #ffffff !important; transition: 0.3s; }
+.day .postTitle a:hover { color: #00f3ff !important; text-shadow: 0 0 10px rgba(0, 243, 255, 0.3); }
+.postCon { color: rgba(255, 255, 255, 0.7); font-size: 0.95rem; line-height: 1.8; margin-bottom: 20px; }
+
+/* =========================================
+   7. 右侧阅读导航 (TOC)
+   ========================================= */
+#zimu-toc-container {
+    position: fixed; top: 150px; right: 2vw; width: 250px;
+    max-height: calc(100vh - 200px); background: var(--glass-bg);
+    backdrop-filter: blur(12px); border: 1px solid var(--glass-border);
+    border-radius: 8px; padding: 20px; z-index: 100; overflow-y: auto;
+    display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+#zimu-toc-container::-webkit-scrollbar { width: 3px; }
+#zimu-toc-container::-webkit-scrollbar-thumb { background: rgba(0, 243, 255, 0.3); border-radius: 3px; }
+.toc-header { font-size: 0.75rem; color: var(--accent-cyan); text-transform: uppercase; margin-bottom: 15px; font-weight: 600; }
+.toc-link { display: block; color: var(--text-secondary) !important; font-size: 0.8rem; margin: 8px 0; transition: all 0.3s ease; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 2px solid transparent; padding-left: 10px; opacity: 0.8; }
+.toc-link:hover { color: var(--text-primary) !important; transform: translateX(3px); }
+.toc-link.active { color: var(--accent-cyan) !important; border-left-color: var(--accent-cyan); background: linear-gradient(90deg, rgba(0,243,255,0.1) 0%, transparent 100%); opacity: 1; font-weight: 600; }
+@media (max-width: 1350px) { #zimu-toc-container { display: none !important; } }
+
+/* =========================================
+   8. 文章内部元素优化 (防止图片溢出)
+   ========================================= */
+#post-body img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    display: block;
+    margin: 20px auto;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+/* =========================================
+   9. 代码块与行内代码样式优化
+   ========================================= */
+/* 9.1 行内代码 (如 `code` 效果) */
+#post-body p code, 
+#post-body li code {
+    background: rgba(0, 243, 255, 0.1);
+    color: var(--accent-cyan);
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', Consolas, monospace !important;
+    font-size: 0.85em;
+    border: 1px solid rgba(0, 243, 255, 0.2);
+    word-break: break-word;
+}
+
+/* 9.2 多行代码块容器 */
+#post-body pre, 
+#post-body .highlight {
+    background: rgba(5, 7, 12, 0.8) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 15px;
+    overflow-x: auto;
+    margin: 20px 0;
+    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+/* 9.3 基础代码块文本样式 (普通文本颜色) */
+#post-body pre code {
+    background: transparent !important;
+    color: #c9d1d9; /* 略微柔和的白色保护视力 */
+    padding: 0;
+    border: none;
+    font-family: 'Courier New', Consolas, monospace !important;
+    font-size: 0.9em;
+    line-height: 1.6;
+}
+
+/* 9.4 针对 Hexo 默认 highlight 的特殊表格结构适配 */
+#post-body .highlight table {
+    margin: 0;
+    width: 100%;
+    border-collapse: collapse;
+}
+#post-body .highlight .gutter {
+    width: 30px;
+    padding-right: 15px;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.3);
+    text-align: right;
+    user-select: none;
+}
+#post-body .highlight .code {
+    padding-left: 15px;
+}
+#post-body .highlight pre {
+    padding: 0;
+    margin: 0;
+    border: none;
+    background: transparent !important;
+    box-shadow: none;
+}
+
+/* 9.5 代码块专属定制滚动条 */
+#post-body pre::-webkit-scrollbar,
+#post-body .highlight::-webkit-scrollbar { height: 8px; width: 8px; }
+#post-body pre::-webkit-scrollbar-thumb,
+#post-body .highlight::-webkit-scrollbar-thumb { background: rgba(0, 243, 255, 0.2); border-radius: 4px; }
+#post-body pre::-webkit-scrollbar-thumb:hover,
+#post-body .highlight::-webkit-scrollbar-thumb:hover { background: rgba(0, 243, 255, 0.5); }
+#post-body pre::-webkit-scrollbar-track,
+#post-body .highlight::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); border-radius: 4px; }
+
+/* -----------------------------------------
+   9.6 Hexo 语法高亮主题 (Cyberpunk Dark)
+   ----------------------------------------- */
+/* 注释内容：灰蓝色，斜体 */
+#post-body .highlight .comment,
+#post-body .highlight .quote {
+    color: #8b949e;
+    font-style: italic;
+}
+/* 关键字/内置标签：赛博粉红 */
+#post-body .highlight .keyword,
+#post-body .highlight .selector-tag,
+#post-body .highlight .built_in,
+#post-body .highlight .name,
+#post-body .highlight .tag {
+    color: #ff7b72; 
+    font-weight: 600;
+}
+/* 字符串/属性/符号：青葱绿 */
+#post-body .highlight .string,
+#post-body .highlight .valid,
+#post-body .highlight .attribute,
+#post-body .highlight .symbol,
+#post-body .highlight .bullet,
+#post-body .highlight .addition {
+    color: #7ee787; 
+}
+/* 数字/布尔值/特殊类型：主题青色 */
+#post-body .highlight .number,
+#post-body .highlight .literal,
+#post-body .highlight .type,
+#post-body .highlight .template-variable,
+#post-body .highlight .template-tag {
+    color: #00f3ff; 
+}
+/* 函数名/类名/标题：霓虹紫 */
+#post-body .highlight .title,
+#post-body .highlight .section,
+#post-body .highlight .title.class_,
+#post-body .highlight .title.class_.inherited__,
+#post-body .highlight .title.function_,
+#post-body .highlight .selector-id,
+#post-body .highlight .selector-class {
+    color: #d2a8ff; 
+}
+/* 变量/参数：浅冰蓝 */
+#post-body .highlight .variable,
+#post-body .highlight .params,
+#post-body .highlight .attr,
+#post-body .highlight .deletion {
+    color: #a5d6ff; 
+}
