@@ -6,7 +6,7 @@
     <!-- 核心修复：添加 no-referrer 标签破解第三方图床防盗链 -->
     <meta name="referrer" content="no-referrer">
     
-    <title>Hexo</title>
+    <title>Categories | Hexo</title>
     <link rel="stylesheet" href="/css/style.css">
 <meta name="generator" content="Hexo 8.1.1"></head>
 <!-- 强制 body 层级左对齐 -->
@@ -24,6 +24,7 @@
         <div style="display: flex; gap: 30px; font-size: 0.75rem; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 1px; font-weight: 500;">
             <a href="/" style="opacity: 0.8;">Home</a>
             <a href="/archives/" style="opacity: 0.8;">Articles</a>
+            <a href="/categories/" style="opacity: 0.8;">Categories</a>
             <a href="https://github.com/zimu61" target="_blank" style="opacity: 0.8;">Contact</a>
         </div>
     </nav>
@@ -52,7 +53,7 @@
         <!-- 底部信息 -->
         <div style="margin-top: 50px; display: flex; align-items: center; gap: 20px;">
             <div style="display: flex; align-items: center; gap: 15px;">
-                <img src="/source/images/avatar.jpg" alt="Avatar"
+                <img src="/images/avatar.jpg" alt="Avatar"
                      style="width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); object-fit: cover; background-color: #1a1a24;">
                 <div>
                     <div style="font-family: 'Inter', sans-serif; font-weight: 600; font-size: 0.9rem; color: #fff;">ZIMU</div>
@@ -64,47 +65,28 @@
 
     <!-- 强制 main 容器左对齐 -->
     <main id="main" style="text-align: left;">
-        
-  <!-- 这里对应着 css 里的 .day 卡片样式 -->
-  <div class="day">
-    <div class="dayTitle">
-        2026-03-11
-    </div>
-    <div class="postTitle">
-        <a href="/2026/03/11/vulnstack1/">内网渗透---vulnstack1</a>
-    </div>
-    <div class="postCon">
-        <!-- 截取文章部分内容作为摘要展示 -->
-        拓扑结构
-
-web服务器（win7）：192.168.77.129   192.168.52.143
-域控（win2008）：192.168.52.138
-域成员（win2003）192.168.52.144
-攻击机：192.168.77.128
-外网渗透信息打点发现80，3306端口访问80...
-    </div>
-  </div>
-
-  <!-- 这里对应着 css 里的 .day 卡片样式 -->
-  <div class="day">
-    <div class="dayTitle">
-        2026-03-10
-    </div>
-    <div class="postTitle">
-        <a href="/2026/03/10/JAVA%E5%AE%89%E5%85%A8CC%E9%93%BE%E7%AF%87/">JAVA安全CC链篇</a>
-    </div>
-    <div class="postCon">
-        <!-- 截取文章部分内容作为摘要展示 -->
-        反射基础的反射方法
-12Class clazz = Class.forName(&quot;java.lang.Runtime&quot;);clazz.getMethod(&quot;exec&quot;, String.class).invoke(clazz.getMethod(&quot...
-    </div>
-  </div>
+        <h2 style="font-family: 'Inter', sans-serif; font-weight: 600; font-size: 1.5rem; color: #fff; margin-bottom: 40px; letter-spacing: 1px;">
+    Categories
+</h2>
 
 
-<!-- 如果文章很多，底部需要分页器 -->
-<div style="text-align: center; margin-top: 40px;">
-  <span class="page-number current">1</span>
-</div>
+  
+    <div class="day" style="padding: 20px 25px; margin-bottom: 20px;">
+      <a href="/categories/Java%E5%AE%89%E5%85%A8/" style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 1.1rem; font-weight: 500; color: #fff;">Java安全</span>
+        <span style="font-size: 0.8rem; color: #00f3ff; background: rgba(0,243,255,0.1); padding: 3px 10px; border-radius: 20px; border: 1px solid rgba(0,243,255,0.2);">1</span>
+      </a>
+    </div>
+  
+    <div class="day" style="padding: 20px 25px; margin-bottom: 20px;">
+      <a href="/categories/%E5%86%85%E7%BD%91%E6%B8%97%E9%80%8F/" style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 1.1rem; font-weight: 500; color: #fff;">内网渗透</span>
+        <span style="font-size: 0.8rem; color: #00f3ff; background: rgba(0,243,255,0.1); padding: 3px 10px; border-radius: 20px; border: 1px solid rgba(0,243,255,0.2);">1</span>
+      </a>
+    </div>
+  
+
+
     </main>
 
 </body>
