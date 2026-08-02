@@ -72,21 +72,23 @@
 
   <div class="day">
     <div class="postTitle">
-        <a href="/JAVA%E5%AE%89%E5%85%A8%E5%9F%BA%E7%A1%80%E7%AF%87/">JAVA安全基础篇</a>
+        <a href="/Fastjson%E6%BC%8F%E6%B4%9E%E5%8E%9F%E7%90%86%E5%88%86%E6%9E%90/">Fastjson漏洞原理分析</a>
     </div>
     <div class="postCon">
-        反射基础的反射方法
-12Class clazz = Class.forName(&quot;java.lang.Runtime&quot;);clazz.getMethod(&quot;exec&quot;, String.class).invoke(clazz.getMethod(&quot...
+        前置知识com.alibaba.fastjson.JSONObject不能强制转换为其他类型 
+不指定@type不会调用构造方法和setter 
+指定@type时，parse只会调用构造方法和特定setter，而parseObject会额外调用getter 
+跟进parseObject()可以...
     </div>
   </div>
 
   <div class="day">
     <div class="postTitle">
-        <a href="/Fastjson%E6%BC%8F%E6%B4%9E%E5%8E%9F%E7%90%86%E5%88%86%E6%9E%90/">Fastjson漏洞原理分析</a>
+        <a href="/JAVA%E5%AE%89%E5%85%A8%E5%9F%BA%E7%A1%80%E7%AF%87/">JAVA安全基础篇</a>
     </div>
     <div class="postCon">
-        前置知识使用 JSON.parse(jsonString) 和 JSON.parseObject(jsonString, Target.class)，两者调用链一致，前者会在 jsonString 中解析字符串获取 @type 指定的类，后者则会直接使用参数中的class
-fastjson 在...
+        反射基础的反射方法
+12Class clazz = Class.forName(&quot;java.lang.Runtime&quot;);clazz.getMethod(&quot;exec&quot;, String.class).invoke(clazz.getMethod(&quot...
     </div>
   </div>
 
