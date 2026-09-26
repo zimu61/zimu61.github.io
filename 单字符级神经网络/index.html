@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 核心修复：添加 no-referrer 标签破解第三方图床防盗链 -->
+    <meta name="referrer" content="no-referrer">
+    
+    <title>单字符级神经网络 | ZIMU BLOG</title>
+    <link rel="stylesheet" href="/css/style.css">
+<meta name="generator" content="Hexo 8.1.1"></head>
+<!-- 强制 body 层级左对齐 -->
+<body style="text-align: left; margin: 0; padding: 0;">
+    <!-- 像素光流背景系统 -->
+    <div class="pixel-light-container">
+        <div class="pixel-grid-mask"></div>
+        <div class="energy-wave wave-1"></div>
+        <div class="energy-wave wave-2"></div>
+        <div class="energy-wave wave-3"></div>
+    </div>
+
+    <!-- 极简导航 -->
+    <nav style="display: flex; justify-content: space-between; align-items: center; padding: 25px 5%; position: relative; z-index: 10;">
+        <div style="display: flex; gap: 30px; font-size: 0.75rem; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 1px; font-weight: 500;">
+            <a href="/" style="opacity: 0.8;">Home</a>
+            <a href="/archives/" style="opacity: 0.8;">Articles</a>
+            <a href="/categories/" style="opacity: 0.8;">Categories</a>
+            <a href="https://github.com/zimu61" target="_blank" style="opacity: 0.8;">Contact</a>
+        </div>
+    </nav>
+
+    <!-- Hero 区域 -->
+    <header style="padding: 120px 5% 60px; text-align: left; max-width: 1000px; position: relative;">
+        <!-- 右侧轨道装饰 -->
+        <div class="orbit-system">
+            <div class="orbit-ring"></div>
+            <div class="orbit-planet"></div>
+            <div class="orbit-label"></div>
+        </div>
+
+        <p style="font-size: 0.7rem; letter-spacing: 3px; color: #00f3ff; text-transform: uppercase; margin-bottom: 25px; display: flex; align-items: center; gap: 10px;">
+            <span style="width: 20px; height: 1px; background: #00f3ff;"></span>
+            System Online
+        </p>
+        
+        <h1 style="font-size: clamp(3.5rem, 9vw, 5.5rem); margin: 0; line-height: 1.05; letter-spacing: -2px;">
+            Architect your <br>
+            <span style="background: linear-gradient(90deg, #fff, rgba(255,255,255,0.4)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-style: italic; font-family: 'Playfair Display', serif;">
+                digital legacy.
+            </span>
+        </h1>
+        
+        <!-- 底部信息 -->
+        <div style="margin-top: 50px; display: flex; align-items: center; gap: 20px;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <img src="/images/avatar.jpg" alt="Avatar"
+                     style="width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.2); object-fit: cover; background-color: #1a1a24;">
+                <div>
+                    <div style="font-family: 'Inter', sans-serif; font-weight: 600; font-size: 0.9rem; color: #fff;">ZIMU</div>
+                    <div style="font-size: 0.65rem; color: #00f3ff; letter-spacing: 1px;">WEB SEC</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 强制 main 容器左对齐 -->
+    <main id="main" style="text-align: left;">
+        <article class="post-detail">
+    <!-- 文章头部信息 -->
+    <header style="margin-bottom: 40px; border-bottom: 1px dashed rgba(0, 243, 255, 0.2); padding-bottom: 20px;">
+        <h1 class="postTitle" style="margin-bottom: 10px; font-size: 2rem;">单字符级神经网络</h1>
+    </header>
+
+    <!-- 文章正文区域，加上 id 供下方 JS 抓取生成目录 -->
+    <div id="post-body" class="postCon" style="color: #fff; line-height: 1.8;">
+        <p>文章学习自<a target="_blank" rel="noopener" href="https://www.youtube.com/playlist?list=PLAqhIrjkxbuWI23v9cThsA9GvCAUhRvKZ">https://www.youtube.com/playlist?list=PLAqhIrjkxbuWI23v9cThsA9GvCAUhRvKZ</a></p>
+<p>记录自己的学习过程，如有不正确请批评指正</p>
+<p>这篇文章结束我们将构建一个单字符级的神经网络模型，了解模型训练和采样的过程以及工程化实现</p>
+<h2 id="统计计数"><a href="#统计计数" class="headerlink" title="统计计数"></a>统计计数</h2><p>首先前往<a target="_blank" rel="noopener" href="https://github.com/karpathy/makemore">https://github.com/karpathy/makemore</a> 下载name.txt这是我们的后续会用到的数据</p>
+<p>内容大概如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">words = <span class="built_in">open</span>(<span class="string">&#x27;names.txt&#x27;</span>,<span class="string">&#x27;r&#x27;</span>).read().splitlines()</span><br><span class="line">words[:<span class="number">3</span>]</span><br><span class="line"></span><br><span class="line">[<span class="string">&#x27;emma&#x27;</span>, <span class="string">&#x27;olivia&#x27;</span>, <span class="string">&#x27;ava&#x27;</span>]</span><br></pre></td></tr></table></figure>
+
+
+
+<p>运行如下代码我们就可以获得一个二元组的降序排列，可以先理解一下这里的操作是怎么实现的，后面我们会用到它</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">b = &#123;&#125;</span><br><span class="line"><span class="keyword">for</span> w <span class="keyword">in</span> words:</span><br><span class="line">    chs = [<span class="string">&#x27;&lt;S&gt;&#x27;</span>] + <span class="built_in">list</span>(w) + [<span class="string">&#x27;&lt;E&gt;&#x27;</span>]</span><br><span class="line">    <span class="keyword">for</span> ch1,ch2 <span class="keyword">in</span> <span class="built_in">zip</span>(chs,chs[<span class="number">1</span>:]): <span class="comment">#滑动窗 口，zip用来逐字符匹配，一个比较巧妙的写法</span></span><br><span class="line">        bigram = (ch1,ch2) <span class="comment">#作为字典中的键</span></span><br><span class="line">        b[bigram] = b.get(bigram,<span class="number">0</span>) + <span class="number">1</span> <span class="comment">#字典中有这个键就加1 没有就添加同时设置默认值0并加1</span></span><br><span class="line"><span class="built_in">sorted</span>(b.items(), key = <span class="keyword">lambda</span> kv: -kv[<span class="number">1</span>])</span><br></pre></td></tr></table></figure>
+
+<p>结果如下</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">((<span class="string">&#x27;n&#x27;</span>, <span class="string">&#x27;&lt;E&gt;&#x27;</span>), <span class="number">6763</span>),</span><br><span class="line"> ((<span class="string">&#x27;a&#x27;</span>, <span class="string">&#x27;&lt;E&gt;&#x27;</span>), <span class="number">6640</span>),</span><br><span class="line"> ((<span class="string">&#x27;a&#x27;</span>, <span class="string">&#x27;n&#x27;</span>), <span class="number">5438</span>),</span><br><span class="line"> ((<span class="string">&#x27;&lt;S&gt;&#x27;</span>, <span class="string">&#x27;a&#x27;</span>), <span class="number">4410</span>),</span><br><span class="line"> ((<span class="string">&#x27;e&#x27;</span>, <span class="string">&#x27;&lt;E&gt;&#x27;</span>), <span class="number">3983</span>)</span><br></pre></td></tr></table></figure>
+
+
+
+<p>首先创建一个全0矩阵N</p>
+<p>chars得到的是name.txt中所有字符的一个列表并且经过排序</p>
+<p>stoi是一个字典键为字符，值为索引，是对chars遍历后得到的</p>
+<p>itos是对stoi的一个反转字典，也就是键值对反过来</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> torch</span><br><span class="line">N = torch.zeros((<span class="number">27</span>,<span class="number">27</span>),dtype=torch.int32)</span><br><span class="line">chars = <span class="built_in">sorted</span>(<span class="built_in">list</span>(<span class="built_in">set</span>(<span class="string">&#x27;&#x27;</span>.join(words))))</span><br><span class="line">stoi = &#123;s:i+<span class="number">1</span> <span class="keyword">for</span> i,s <span class="keyword">in</span> <span class="built_in">enumerate</span>(chars)&#125; <span class="comment">#得到字符-&gt;索引 &#123;&#x27;a&#x27;: 0,&#x27;b&#x27;: 1,&#x27;c&#x27;: 2,&#x27;d&#x27;: 3 ……&#125; ，因为现在&#x27;.&#x27;对应0，所以加1</span></span><br><span class="line">stoi[<span class="string">&#x27;.&#x27;</span>] = <span class="number">0</span></span><br><span class="line">itos = &#123;i:s <span class="keyword">for</span> s,i <span class="keyword">in</span> stoi.items()&#125; <span class="comment">#反转操作</span></span><br><span class="line"><span class="keyword">for</span> w <span class="keyword">in</span> words:</span><br><span class="line">    chs = [<span class="string">&#x27;.&#x27;</span>] + <span class="built_in">list</span>(w) + [<span class="string">&#x27;.&#x27;</span>]</span><br><span class="line">    <span class="keyword">for</span> ch1,ch2 <span class="keyword">in</span> <span class="built_in">zip</span>(chs,chs[<span class="number">1</span>:]):</span><br><span class="line">        ix1 = stoi[ch1]</span><br><span class="line">        ix2 = stoi[ch2] <span class="comment">#获得对应字符的索引</span></span><br><span class="line">        N[ix1,ix2] += <span class="number">1</span> <span class="comment">#对应组合加1</span></span><br></pre></td></tr></table></figure>
+
+<p>这里的循环就是在遍历所有名字单词的二元字符组合，获取对应的索引并将数量存储在N中</p>
+<p>运行一下代码得到N的可视化表格</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> matplotlib.pyplot <span class="keyword">as</span> plt</span><br><span class="line">%matplotlib inline</span><br><span class="line"></span><br><span class="line">plt.figure(figsize=(<span class="number">16</span>,<span class="number">16</span>))</span><br><span class="line">plt.imshow(N, cmap=<span class="string">&#x27;Reds&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span> (<span class="number">27</span>):</span><br><span class="line">    <span class="keyword">for</span> j <span class="keyword">in</span> <span class="built_in">range</span> (<span class="number">27</span>):</span><br><span class="line">        chstr = itos[i] + itos[j]</span><br><span class="line">        plt.text(j,i,chstr,ha=<span class="string">&#x27;center&#x27;</span>,va=<span class="string">&#x27;bottom&#x27;</span>,color=<span class="string">&#x27;gray&#x27;</span>)</span><br><span class="line">        plt.text(j,i,N[i,j].item(),ha=<span class="string">&#x27;center&#x27;</span>,va=<span class="string">&#x27;top&#x27;</span>,color=<span class="string">&#x27;gray&#x27;</span>)</span><br><span class="line">plt.axis(<span class="string">&#x27;off&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1783504831823-849c5539-a35b-436a-8cb3-2d5cb7a4fbd3.png"></p>
+<p>例如ab 代表了ab这个二元组出现的次数</p>
+<p>对于每一行而言，例如1行，就代表各个字符出现在a字符后的计数</p>
+<h2 id="基于统计计数构建模型"><a href="#基于统计计数构建模型" class="headerlink" title="基于统计计数构建模型"></a>基于统计计数构建模型</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">P = N.<span class="built_in">float</span>()</span><br><span class="line">P  /= P.<span class="built_in">sum</span>(<span class="number">1</span>, keepdim=<span class="literal">True</span>) <span class="comment">#在维度1上压缩，得到(27,1)的矩阵</span></span><br></pre></td></tr></table></figure>
+
+<p>P.sum(1, keepdim&#x3D;True)在维度1上求和并压缩得到(27,1)的矩阵</p>
+<p>然后运算P &#x3D; P &#x2F; P.sum(1, keepdim&#x3D;True) </p>
+<p>P是(27,27)的矩阵 </p>
+<p>P.sum(1, keepdim&#x3D;True) 是(27,1)的矩阵</p>
+<p>pytorch底层会对P.sum(1, keepdim&#x3D;True)进行扩展，也就是从左往右按列复制变成一个(27,27)的矩阵</p>
+<p>这样最后，结果P也是一个(27,27)的矩阵，其中存储的就是：对于每一行而言各个字符出现在该字符后的概率</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1783505758580-3439a299-0aa6-4107-a071-ceba3b7bbc9e.png"></p>
+<p><font style="color:#DF2A3F;"></font></p>
+<p><font style="color:#DF2A3F;">keepdim&#x3D;True这个参数很重要，如果没有这个参数就会丢失一个维度，pytorch底层在做除法时会为其补充维度变成(1,27)，然后再进行扩展，但此时扩展是竖向的，导致整个运算都是错误的</font></p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1783505248274-4a73dbaa-bcda-41da-a1a3-f29d0ef93d9a.png"></p>
+<h3 id="在模型中采样"><a href="#在模型中采样" class="headerlink" title="在模型中采样"></a>在模型中采样</h3><p>现在我们已经构建了一个基于统计计数的二元字符模型</p>
+<p>接下来我们尝试进行采样</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">g = torch.Generator().manual_seed(<span class="number">2147483647</span>)</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span> (<span class="number">3</span>):</span><br><span class="line">    ix = <span class="number">0</span></span><br><span class="line">    out = []</span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        p = P[ix]</span><br><span class="line">        ix = torch.multinomial(p,num_samples=<span class="number">1</span>,replacement=<span class="literal">True</span>,generator=g).item() <span class="comment">#给出下一个索引</span></span><br><span class="line">        out.append(itos[ix])</span><br><span class="line">        <span class="keyword">if</span> ix == <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;&#x27;</span>.join(out))</span><br></pre></td></tr></table></figure>
+
+<p>这里p就是我们从第0行取出的一个概率向量，因为第0行就是第一个字符分布的概率</p>
+<p>torch.multinomial是一个用于采样的函数，p作为概率分布传入，num_samples代表采样数量</p>
+<p>replacement&#x3D;True代表有无放回，generator是一个随机生成器</p>
+<p>for i in range (3) 代表我们取样3次</p>
+<p>举个例子：</p>
+<p>p的概率分布为tensor([0.1000, 0.2000, 0.7000])</p>
+<p>我们取样3个，可以看到结果都是2，因为索引为2的概率是0.7比其他两个高的多</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1783507174842-5d617e40-0c17-419e-9d14-afb959341ca7.png"></p>
+<p>最终的取样结果</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1783507284333-87493523-3d99-4e94-8d9b-b0c7fb8090fd.png"></p>
+<p>可以看到效果并不好，这是因为这个模型本身的效果就比较差</p>
+<h3 id="评价模型的指标"><a href="#评价模型的指标" class="headerlink" title="评价模型的指标"></a>评价模型的指标</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><span class="line">log_likelihod = <span class="number">0.0</span> <span class="comment">#对数似然</span></span><br><span class="line">n = <span class="number">0</span></span><br><span class="line"><span class="keyword">for</span> w <span class="keyword">in</span> words:</span><br><span class="line">    chs = [<span class="string">&#x27;.&#x27;</span>] + <span class="built_in">list</span>(w) + [<span class="string">&#x27;.&#x27;</span>]</span><br><span class="line">    <span class="keyword">for</span> ch1,ch2 <span class="keyword">in</span> <span class="built_in">zip</span>(chs,chs[<span class="number">1</span>:]):</span><br><span class="line">        ix1 = stoi[ch1]</span><br><span class="line">        ix2 = stoi[ch2]</span><br><span class="line">        prob = P[ix1,ix2] <span class="comment">#该种组合的概率</span></span><br><span class="line">        logprob = torch.log(prob)</span><br><span class="line">        log_likelihod += logprob <span class="comment">#求对数似然值 log(a)+log(b)=log(a*b) a*b就是似然值，一组概率的乘积</span></span><br><span class="line">        n += <span class="number">1</span></span><br><span class="line">        <span class="comment">#print(f&#x27;&#123;ch1&#125;&#123;ch2&#125;: &#123;prob:.4f&#125; &#123;logprob:.4f&#125;&#x27;)</span></span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;log_likelihod=&#125;</span>&#x27;</span>)</span><br><span class="line">nll = -log_likelihod <span class="comment">#负对数似然 最小值为0，值越高说明对数似然越负，对数似然越负说明概率乘积越小，说明模型效果越差。因此nll可以作为loss，值越低越好</span></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;nll=&#125;</span>&#x27;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;nll/n&#125;</span>&#x27;</span>) <span class="comment">#平均负对数似然，通常用它来作为loss</span></span><br></pre></td></tr></table></figure>
+
+<p>所以我们的目标就是寻找最大似然，也就是最大的概率乘积</p>
+<p>等价于寻找最大对数似然，其实这是一种缩放的操作</p>
+<p>也就等价与最小负对数似然</p>
+<p>实际情况下我们使用平均最小负对数似然，平均最小负对数似然就显示了模型的质量</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line">P = (N+<span class="number">1</span>).<span class="built_in">float</span>()</span><br><span class="line">P  /= P.<span class="built_in">sum</span>(<span class="number">1</span>, keepdim=<span class="literal">True</span>) <span class="comment">#在维度1上压缩，得到(27,1)的矩阵</span></span><br><span class="line"><span class="comment"># P #归一化处理</span></span><br><span class="line"></span><br><span class="line">log_likelihod = <span class="number">0.0</span> <span class="comment">#对数似然</span></span><br><span class="line">n = <span class="number">0</span></span><br><span class="line"><span class="keyword">for</span> w <span class="keyword">in</span> [<span class="string">&#x27;adwsx&#x27;</span>]:</span><br><span class="line">	chs = [<span class="string">&#x27;.&#x27;</span>] + <span class="built_in">list</span>(w) + [<span class="string">&#x27;.&#x27;</span>]</span><br><span class="line">	<span class="keyword">for</span> ch1,ch2 <span class="keyword">in</span> <span class="built_in">zip</span>(chs,chs[<span class="number">1</span>:]):</span><br><span class="line">		ix1 = stoi[ch1]</span><br><span class="line">		ix2 = stoi[ch2]</span><br><span class="line">		prob = P[ix1,ix2] <span class="comment">#该种组合的概率</span></span><br><span class="line">		logprob = torch.log(prob)</span><br><span class="line">		log_likelihod += logprob <span class="comment">#求对数似然值 log(a)+log(b)=log(a*b) a*b就是似然值，一组概率的乘积</span></span><br><span class="line">		n += <span class="number">1</span></span><br><span class="line">		<span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;ch1&#125;</span><span class="subst">&#123;ch2&#125;</span>: <span class="subst">&#123;prob:<span class="number">.4</span>f&#125;</span> <span class="subst">&#123;logprob:<span class="number">.4</span>f&#125;</span>&#x27;</span>)</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;log_likelihod=&#125;</span>&#x27;</span>)</span><br><span class="line">nll = -log_likelihod <span class="comment">#负对数似然 最小值为0，值越高说明对数似然越负，对数似然越负说明概率乘积越小，说明模型效果越差。因此nll可以作为loss，值越低越好</span></span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;nll=&#125;</span>&#x27;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&#x27;<span class="subst">&#123;nll/n&#125;</span>&#x27;</span>) <span class="comment">#平均负对数似然，通常用它来作为loss</span></span><br></pre></td></tr></table></figure>
+
+<p>上面这种情况平均负对数似然出现了无穷大，因为模型认为sx这种组合概率为0，这与我们提供的数据有关，解决的方法是可以给N加上一些计数，我们称之为”模型平滑”,加的数越多可以认为概率分布越均匀</p>
+<p>加1后不再是无穷大但模型仍然会认为sx是一种概率极低可能</p>
+<h2 id="基于神经网络构建模型"><a href="#基于神经网络构建模型" class="headerlink" title="基于神经网络构建模型"></a>基于神经网络构建模型</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#构建训练集</span></span><br><span class="line"></span><br><span class="line">xs , ys = [], []</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> w <span class="keyword">in</span> words[:<span class="number">1</span>]:</span><br><span class="line">    chs = [<span class="string">&#x27;.&#x27;</span>] + <span class="built_in">list</span>(w) + [<span class="string">&#x27;.&#x27;</span>]</span><br><span class="line">    <span class="keyword">for</span> ch1,ch2 <span class="keyword">in</span> <span class="built_in">zip</span>(chs,chs[<span class="number">1</span>:]):</span><br><span class="line">        ix1 = stoi[ch1]</span><br><span class="line">        ix2 = stoi[ch2] <span class="comment">#获得对应字符的索引</span></span><br><span class="line">        xs.append(ix1)</span><br><span class="line">        ys.append(ix2)</span><br><span class="line"></span><br><span class="line">xs = torch.tensor(xs)</span><br><span class="line">ys = torch.tensor(ys)</span><br></pre></td></tr></table></figure>
+
+
+
+<p>输入为0，期望输出5 输入为5，期望输出13 ……</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1790398212621-2e1aabc8-c31a-4e24-84ea-834e081218a9.png"></p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> torch.nn.functional <span class="keyword">as</span> F</span><br><span class="line">xenc = F.one_hot(xs, num_classes=<span class="number">27</span>).<span class="built_in">float</span>() <span class="comment">#独热编码</span></span><br><span class="line">xenc</span><br></pre></td></tr></table></figure>
+
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1790398333617-c38bec1a-b6bf-48dc-948b-fc1e34f658c1.png"></p>
+<p>这里使用独热编码来构造输入，在后面的MLP中会使用另一种方法</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">W = torch.randn((<span class="number">27</span>,<span class="number">27</span>)) <span class="comment">#初始权重，randn在正态分布上随机取数，因此会集中在0附近。表示着27个神经元分别对27种字符的敏感程度，一列代表一个神经元的权重</span></span><br><span class="line">res = xenc @ W <span class="comment">#输入与权重的乘积，结果为(5,27) 代表27个神经元对5种输入的处理结果，每一列代表每一个神经元的处理结果</span></span><br><span class="line">res</span><br></pre></td></tr></table></figure>
+
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1790398416959-1c057574-5bfe-4590-87f9-01adec5c75a5.png"></p>
+<p>res[2,11] 代表了第11个神经元对第2个输入的处理结果，这里可以停下来思考下</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">logits = res <span class="comment">#xenc @ W</span></span><br><span class="line">counts = logits.exp() <span class="comment">#logits的指数作为计数，等价于我们统计计数中N数组</span></span><br><span class="line">prob = counts / counts.<span class="built_in">sum</span>(<span class="number">1</span>, keepdims=<span class="literal">True</span>) <span class="comment">#归一化</span></span><br><span class="line">prob</span><br></pre></td></tr></table></figure>
+
+<p>这两步就是我们所说的softmax</p>
+<p>为什么用exp？概率不能为负，单调递增，并且对差异指数级放大</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1790400100663-0584a38e-461a-4c8a-9fb4-0e2d28f59d86.png"></p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">nlls = torch.zeros(<span class="number">5</span>)</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span> (<span class="number">5</span>):</span><br><span class="line">    x = xs[i].item()</span><br><span class="line">    y = ys[i].item()</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;****************&#x27;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;示例 <span class="subst">&#123;i+<span class="number">1</span>&#125;</span>: <span class="subst">&#123;itos[x]&#125;</span><span class="subst">&#123;itos[y]&#125;</span>&#x27;</span>)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;输入神经网络的值:&#x27;</span>,x)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;神经网络输出的概率值:&#x27;</span>,probs[i])</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;我们的期望值:&#x27;</span>,y)</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;期望值对应的概率:&#x27;</span>,probs[i][y].item())</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;期望值对应的对数概率:&#x27;</span>,torch.log(probs[i][y]).item())</span><br><span class="line">    <span class="built_in">print</span>(<span class="string">f&#x27;期望值对应的负对数概率:&#x27;</span>,-(torch.log(probs[i][y]).item()))</span><br><span class="line">    nlls[i] = -(torch.log(probs[i][y]).item())</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&#x27;\n&#x27;</span>)    </span><br><span class="line"><span class="built_in">print</span>(<span class="string">f&#x27;****************&#x27;</span>)</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&#x27;总平均负对数似然：loss =&#x27;</span>, nlls.mean().item())</span><br></pre></td></tr></table></figure>
+
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1790400892375-e38d1189-0cc1-4f1f-af80-119a395dc6d1.png"></p>
+<p>会发现期望值的概率非常低，loss值也很高，这是因为权重值是我们随机生成的，我们可以通过调整这个权重来提高概率</p>
+<p>我们采用一种叫做梯度下降的方法，来逐步下降loss</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#随机构建(27,27)的权重矩阵，对应27个神经元</span></span><br><span class="line">g = torch.Generator().manual_seed(<span class="number">2147483647</span>)</span><br><span class="line">W = torch.randn((<span class="number">27</span>,<span class="number">27</span>), generator=g, requires_grad=<span class="literal">True</span>) <span class="comment">#在pytorch中reqires_grad参数必须显示指定，底层才会计算梯度</span></span><br><span class="line"></span><br><span class="line"><span class="comment">#前向传播</span></span><br><span class="line">xenc = F.one_hot(xs, num_classes=<span class="number">27</span>).<span class="built_in">float</span>() <span class="comment">#对输入做独热编码</span></span><br><span class="line">logits = xenc @ W <span class="comment">#神经网络第一层的乘法，得到逻辑值</span></span><br><span class="line">counts = logits.exp() <span class="comment">#对逻辑值指数化，得到计数值</span></span><br><span class="line">probs = counts / counts.<span class="built_in">sum</span>(<span class="number">1</span>, keepdims=<span class="literal">True</span>) <span class="comment">#归一化得到概率</span></span><br><span class="line">loss = -probs[torch.arange(<span class="number">5</span>), ys].log().mean() <span class="comment">#平均负对数似然作为loss，这以为着前向传播的终止节点为loss的输出</span></span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment">#反向传播</span></span><br><span class="line">W.grad = <span class="literal">None</span> <span class="comment"># 如果不重置，多次反向传播时pytorch会累加</span></span><br><span class="line">loss.backward() <span class="comment">#pytorch底层运算各个部分的梯度</span></span><br></pre></td></tr></table></figure>
+
+
+
+<p>W.grad的每个元素代表着此权重对loss函数的影响 如W.grad[0,0]&#x3D;0.0121 代表对loss有正向影响，若增加W[0,0]那么loss也会增加，反之亦然</p>
+<!-- 这是一张图片，ocr 内容为： -->
+<p><img src="https://cdn.nlark.com/yuque/0/2026/png/48995099/1790401041178-c339e8ae-9583-4a79-8c7d-73954abb82eb.png"></p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">W.data += -<span class="number">0.1</span> * W.grad <span class="comment">#沿着梯度反方向增加，这就是我们说的梯度下降法</span></span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<p>这里的数据集我们一直只使用了一个单词,5个二元组，现在优化为所有单词，只需要删掉[:1]</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">#构建数据集</span></span><br><span class="line">xs , ys = [], []</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> w <span class="keyword">in</span> words:</span><br><span class="line">    chs = [<span class="string">&#x27;.&#x27;</span>] + <span class="built_in">list</span>(w) + [<span class="string">&#x27;.&#x27;</span>]</span><br><span class="line">    <span class="keyword">for</span> ch1,ch2 <span class="keyword">in</span> <span class="built_in">zip</span>(chs,chs[<span class="number">1</span>:]):</span><br><span class="line">        ix1 = stoi[ch1]</span><br><span class="line">        ix2 = stoi[ch2] <span class="comment">#获得对应字符的索引</span></span><br><span class="line">        xs.append(ix1)</span><br><span class="line">        ys.append(ix2)</span><br><span class="line"></span><br><span class="line">xs = torch.tensor(xs)</span><br><span class="line">ys = torch.tensor(ys)</span><br><span class="line"></span><br><span class="line">num = xs.nelement()</span><br><span class="line"><span class="built_in">print</span>(<span class="string">&#x27;训练参数个数：&#x27;</span>,num)</span><br><span class="line"><span class="comment">#初始化网络</span></span><br><span class="line">g = torch.Generator().manual_seed(<span class="number">2147483647</span>)</span><br><span class="line">W = torch.randn((<span class="number">27</span>,<span class="number">27</span>), generator=g,requires_grad=<span class="literal">True</span>)</span><br><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">100</span>):</span><br><span class="line">    <span class="comment">#前向传播</span></span><br><span class="line">    xenc = F.one_hot(xs, num_classes=<span class="number">27</span>).<span class="built_in">float</span>() <span class="comment">#对输入做独热编码</span></span><br><span class="line">    logits = xenc @ W <span class="comment">#神经网络第一层的乘法，得到逻辑值</span></span><br><span class="line">    counts = logits.exp() <span class="comment">#对逻辑值指数化，得到计数值</span></span><br><span class="line">    probs = counts / counts.<span class="built_in">sum</span>(<span class="number">1</span>, keepdims=<span class="literal">True</span>) <span class="comment">#归一化得到概率</span></span><br><span class="line">    loss = -probs[torch.arange(num), ys].log().mean() + <span class="number">0.01</span>*(W**<span class="number">2</span>).mean() <span class="comment">#平均负对数似然作为loss，这意味着着前向传播的终止节点为loss的输出</span></span><br><span class="line">    <span class="built_in">print</span>(loss.item())</span><br><span class="line">    <span class="comment">#反向传播</span></span><br><span class="line">    W.grad = <span class="literal">None</span> <span class="comment"># 如果不重置，多次反向传播时pytorch会累加</span></span><br><span class="line">    loss.backward() <span class="comment">#pytorch底层运算各个部分的梯度</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">#梯度下降</span></span><br><span class="line">    W.data += -<span class="number">50</span> * W.grad <span class="comment">#沿着梯度反方向增加，这就是我们说的梯度下降法</span></span><br></pre></td></tr></table></figure>
+
+
+
+<h3 id="正则化处理"><a href="#正则化处理" class="headerlink" title="正则化处理"></a>正则化处理</h3><p>还记得之前统计计数方法的正则化处理吗？在这里我们也有相似的机制</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">P = (N+a).<span class="built_in">float</span>() </span><br><span class="line">P  /= P.<span class="built_in">sum</span>(<span class="number">1</span>, keepdim=<span class="literal">True</span>) </span><br></pre></td></tr></table></figure>
+
+<p>统计计数方法中，我们可以增大a的值来进行标签平滑，因为a越大，每个二元组的概率就会趋同，这很直观</p>
+<p>那么基于神经网络的架构中，怎么实现这样的机制？</p>
+<p>我们可以添加一个正则化项0.01*(W**2).mean()，0.01为系数，再假想一下如果W全为0，那么logits也将全为0，counts则全为1，那么probs就是绝对均匀的概率分布</p>
+<p>假设W有n个元素，0.01*(W**2).mean()对W的梯度是b &#x3D; 0.01 * 2 * W &#x2F; n (这里不懂的可以问一下ai计算过程)</p>
+<p>那么最终W.grad &#x3D; 数据损失产生的梯度a + 正则化产生的梯度b  b就会将W往数值为0的方向靠，W.data需要多减一个b，那么正则项的系数越大，减的就越多，往0靠的趋势越大，对应概率分布就越均匀</p>
+<h3 id="采样"><a href="#采样" class="headerlink" title="采样"></a>采样</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">这是我们在统计计数中所做的采样操作</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span> (<span class="number">3</span>):</span><br><span class="line">    ix = <span class="number">0</span></span><br><span class="line">    out = []</span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        p = P[ix]</span><br><span class="line">        ix = torch.multinomial(p,num_samples=<span class="number">1</span>,replacement=<span class="literal">True</span>,generator=g).item() <span class="comment">#给出下一个索引</span></span><br><span class="line">        out.append(itos[ix])</span><br><span class="line">        <span class="keyword">if</span> ix == <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;&#x27;</span>.join(out))</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">g = torch.Generator().manual_seed(<span class="number">2147483647</span>)</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span> (<span class="number">10</span>):</span><br><span class="line">    ix = <span class="number">0</span></span><br><span class="line">    out = []</span><br><span class="line">    <span class="keyword">while</span> <span class="literal">True</span>:</span><br><span class="line">        xenc = F.one_hot(torch.tensor([ix]), num_classes=<span class="number">27</span>).<span class="built_in">float</span>() <span class="comment">#对输入做独热编码</span></span><br><span class="line">        logits = xenc @ W <span class="comment">#神经网络第一层的乘法，得到逻辑值</span></span><br><span class="line">        counts = logits.exp() <span class="comment">#对逻辑值指数化，得到计数值</span></span><br><span class="line">        <span class="comment">#这里我们的p概率向量来自神经网络</span></span><br><span class="line">        p = counts / counts.<span class="built_in">sum</span>(<span class="number">1</span>, keepdims=<span class="literal">True</span>) <span class="comment">#归一化得到概率</span></span><br><span class="line">        ix = torch.multinomial(p,num_samples=<span class="number">1</span>,replacement=<span class="literal">True</span>,generator=g).item() <span class="comment">#给出下一个索引</span></span><br><span class="line">        out.append(itos[ix])</span><br><span class="line">        <span class="keyword">if</span> ix == <span class="number">0</span>:</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">    <span class="built_in">print</span>(<span class="string">&#x27;&#x27;</span>.join(out))</span><br></pre></td></tr></table></figure>
+
+
+    </div>
+</article>
+
+<!-- ==========================================
+     自动生成右侧导航目录 (TOC) & 滚动监听脚本
+     ========================================== -->
+<script>
+(function() {
+    // 1. 原有的平滑滚动（针对文章内的锚点链接）
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            if (!this.classList.contains('toc-link')) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if(target) target.scrollIntoView({ behavior: 'smooth' });
+            }
+        });
+    });
+
+    // 2. 初始化右侧导航
+    function initTOC() {
+        if (document.querySelector('#zimu-toc-container')) return;
+        
+        // 注意：这里改成了 Hexo 模板中定义的正文容器 id
+        const postBody = document.querySelector('#post-body');
+        if (!postBody) return; 
+        
+        // 抓取各级标题
+        const headings = postBody.querySelectorAll('h1, h2, h3, h4');
+        if (headings.length === 0) return;
+
+        // 创建目录容器
+        const tocContainer = document.createElement('div');
+        tocContainer.id = 'zimu-toc-container';
+        tocContainer.style.display = 'block'; 
+        
+        // 创建目录头部
+        const tocHeader = document.createElement('div');
+        tocHeader.className = 'toc-header';
+        tocHeader.innerText = 'Navigation';
+        tocContainer.appendChild(tocHeader);
+
+        const tocItems = [];
+
+        // 遍历并生成链接
+        headings.forEach((heading, index) => {
+            if (!heading.id) {
+                heading.id = 'zimu-heading-' + index;
+            }
+
+            const link = document.createElement('a');
+            link.href = '#' + heading.id;
+            link.className = 'toc-link';
+            link.innerText = heading.innerText || heading.textContent;
+            
+            // 计算缩进
+            const level = parseInt(heading.tagName.substring(1));
+            const indent = (level - 1) * 12;
+            link.style.marginLeft = `${indent}px`;
+
+            // 点击平滑滚动
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                const topOffset = heading.getBoundingClientRect().top + window.scrollY - 80;
+                window.scrollTo({ top: topOffset, behavior: 'smooth' });
+                history.pushState(null, null, '#' + heading.id);
+            });
+
+            tocContainer.appendChild(link);
+            tocItems.push({ heading: heading, link: link });
+        });
+
+        document.body.appendChild(tocContainer);
+
+        // 滚动监听逻辑
+        const onScroll = () => {
+            let currentHeadingIndex = 0;
+            for (let i = 0; i < tocItems.length; i++) {
+                const rect = tocItems[i].heading.getBoundingClientRect();
+                if (rect.top <= 120) {
+                    currentHeadingIndex = i;
+                } else {
+                    break; 
+                }
+            }
+
+            tocItems.forEach((item, index) => {
+                if (index === currentHeadingIndex) {
+                    item.link.classList.add('active');
+                } else {
+                    item.link.classList.remove('active');
+                }
+            });
+        };
+
+        window.addEventListener('scroll', onScroll, { passive: true });
+        setTimeout(onScroll, 100); 
+    }
+
+    // 执行挂载
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initTOC);
+    } else {
+        initTOC();
+    }
+})();
+</script>
+    </main>
+
+</body>
+</html>

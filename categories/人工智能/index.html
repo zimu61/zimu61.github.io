@@ -65,14 +65,16 @@
 
     <!-- 强制 main 容器左对齐 -->
     <main id="main" style="text-align: left;">
-        
-  <!-- 这里对应着 css 里的 .day 卡片样式 -->
+        <h2 style="font-family: 'Inter', sans-serif; font-weight: 600; font-size: 1.5rem; color: #00f3ff; margin-bottom: 30px; letter-spacing: 1px;">
+    人工智能
+</h2>
+
+
   <div class="day">
     <div class="postTitle">
         <a href="/%E5%8D%95%E5%AD%97%E7%AC%A6%E7%BA%A7%E7%A5%9E%E7%BB%8F%E7%BD%91%E7%BB%9C/">单字符级神经网络</a>
     </div>
     <div class="postCon">
-        <!-- 截取文章部分内容作为摘要展示 -->
         文章学习自https://www.youtube.com/playlist?list=PLAqhIrjkxbuWI23v9cThsA9GvCAUhRvKZ
 记录自己的学习过程，如有不正确请批评指正
 这篇文章结束我们将构建一个单字符级的神经网络模型，了解模型训练和采样的过程以及工程化实现
@@ -80,37 +82,11 @@
     </div>
   </div>
 
-  <!-- 这里对应着 css 里的 .day 卡片样式 -->
-  <div class="day">
-    <div class="postTitle">
-        <a href="/Fastjson%E6%BC%8F%E6%B4%9E%E5%8E%9F%E7%90%86%E5%88%86%E6%9E%90/">Fastjson漏洞原理分析</a>
-    </div>
-    <div class="postCon">
-        <!-- 截取文章部分内容作为摘要展示 -->
-        前置知识com.alibaba.fastjson.JSONObject不能强制转换为其他类型 
-不指定@type不会调用构造方法和setter 
-指定@type时，parse只会调用构造方法和特定setter，而parseObject会额外调用getter 
-跟进parseObject()可以...
-    </div>
-  </div>
 
-  <!-- 这里对应着 css 里的 .day 卡片样式 -->
-  <div class="day">
-    <div class="postTitle">
-        <a href="/JAVA%E5%AE%89%E5%85%A8%E5%9F%BA%E7%A1%80%E7%AF%87/">JAVA安全基础篇</a>
-    </div>
-    <div class="postCon">
-        <!-- 截取文章部分内容作为摘要展示 -->
-        反射基础的反射方法
-12Class clazz = Class.forName(&quot;java.lang.Runtime&quot;);clazz.getMethod(&quot;exec&quot;, String.class).invoke(clazz.getMethod(&quot...
-    </div>
-  </div>
-
-
-<!-- 如果文章很多，底部需要分页器 -->
 <div style="text-align: center; margin-top: 40px;">
   <span class="page-number current">1</span>
 </div>
+
     </main>
 
 </body>
