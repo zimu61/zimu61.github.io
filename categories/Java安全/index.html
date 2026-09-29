@@ -98,6 +98,14 @@
 </div>
 
     </main>
+    <script>
+    (function () {
+        var root = document.documentElement;
+        document.addEventListener('visibilitychange', function () {
+            root.classList.toggle('page-hidden', document.hidden);
+        });
+    })();
+    </script>
 
 </body>
 </html>

@@ -601,24 +601,25 @@
 
         document.body.appendChild(tocContainer);
 
-        // 滚动监听逻辑
+        let ticking = false;
+        let lastActive = -1;
         const onScroll = () => {
-            let currentHeadingIndex = 0;
-            for (let i = 0; i < tocItems.length; i++) {
-                const rect = tocItems[i].heading.getBoundingClientRect();
-                if (rect.top <= 120) {
-                    currentHeadingIndex = i;
-                } else {
-                    break; 
+            if (ticking) return;
+            ticking = true;
+            requestAnimationFrame(() => {
+                ticking = false;
+                let currentHeadingIndex = 0;
+                for (let i = 0; i < tocItems.length; i++) {
+                    if (tocItems[i].heading.getBoundingClientRect().top <= 120) {
+                        currentHeadingIndex = i;
+                    } else {
+                        break;
+                    }
                 }
-            }
-
-            tocItems.forEach((item, index) => {
-                if (index === currentHeadingIndex) {
-                    item.link.classList.add('active');
-                } else {
-                    item.link.classList.remove('active');
-                }
+                if (currentHeadingIndex === lastActive) return;
+                if (lastActive >= 0) tocItems[lastActive].link.classList.remove('active');
+                tocItems[currentHeadingIndex].link.classList.add('active');
+                lastActive = currentHeadingIndex;
             });
         };
 
@@ -635,6 +636,14 @@
 })();
 </script>
     </main>
+    <script>
+    (function () {
+        var root = document.documentElement;
+        document.addEventListener('visibilitychange', function () {
+            root.classList.toggle('page-hidden', document.hidden);
+        });
+    })();
+    </script>
 
 </body>
 </html>
